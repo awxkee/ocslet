@@ -1,3 +1,7 @@
+[workspace]
+members = []
+exclude = ["fuzz"]
+
 [package]
 name = "osclet"
 version = "0.1.0"

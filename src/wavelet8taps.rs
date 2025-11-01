@@ -265,7 +265,7 @@ where
     f64: AsPrimitive<T>,
 {
     fn filter_length(&self) -> usize {
-        6
+        8
     }
 }
 
@@ -275,7 +275,7 @@ mod tests {
     use crate::{DaubechiesFamily, WaveletFilterProvider};
 
     #[test]
-    fn test_db4_odd() {
+    fn test_db8_odd() {
         let input = vec![
             1.0, 2.0, 3.0, 4.0, 2.0, 1.0, 0.0, 1.0, 2.4, 6.5, 2.4, 6.4, 5.2, 0.6, 0.5, 1.3, 2.5,
         ];
@@ -346,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn test_db4_even() {
+    fn test_db8_even() {
         let input = vec![
             1.0, 2.0, 3.0, 4.0, 2.0, 1.0, 0.0, 1.0, 2.4, 6.5, 2.4, 6.4, 5.2, 0.6, 0.5, 1.3,
         ];
@@ -401,6 +401,40 @@ mod tests {
                 x
             );
         });
+
+        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 8)];
+        db4.execute_inverse(&approx, &details, &mut reconstructed)
+            .unwrap();
+        reconstructed.iter().take(input.len()).enumerate().for_each(|(i, x)| {
+            assert!(
+                (input[i] - x).abs() < 1e-7,
+                "reconstructed difference expected to be < 1e-7, but values were ref {}, derived {}",
+                input[i],
+                x
+            );
+        });
+    }
+
+    #[test]
+    fn test_db8_even_big() {
+        let data_length = 86;
+        let mut input = vec![0.; data_length];
+        for i in 0..data_length {
+            input[i] = i as f32 / data_length as f32;
+        }
+        let db4 = Wavelet8Taps::new(
+            BorderMode::Wrap,
+            DaubechiesFamily::Db4
+                .get_wavelet()
+                .as_slice()
+                .try_into()
+                .unwrap(),
+        );
+        let out_length = dwt_length(input.len(), 8);
+        let mut approx = vec![0.0; out_length];
+        let mut details = vec![0.0; out_length];
+        db4.execute_forward(&input, &mut approx, &mut details)
+            .unwrap();
 
         let mut reconstructed = vec![0.0; idwt_length(approx.len(), 8)];
         db4.execute_inverse(&approx, &details, &mut reconstructed)

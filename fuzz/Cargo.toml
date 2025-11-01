@@ -1,0 +1,43 @@
+[package]
+name = "osclet-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1.4.2", features = ["derive"] }
+
+[dependencies.osclet]
+path = ".."
+
+[[bin]]
+name = "single_prec_wave"
+path = "single_prec_wave/single_prec_wave.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "double_prec_wave"
+path = "double_prec_wave/double_prec_wave.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "single_modwt"
+path = "single_modwt/single_modwt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "double_modwt"
+path = "double_modwt/double_modwt.rs"
+test = false
+doc = false
+bench = false

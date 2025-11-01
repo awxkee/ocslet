@@ -206,6 +206,27 @@ impl Osclet {
         }
     }
 
+    /// Internal helper to create a wavelet executor based on a provided wavelet filter.
+    ///
+    /// Chooses a specialized constructor for common filter lengths (2, 4, 6, 8 taps),
+    /// or a generic N-tap constructor otherwise.
+    fn default_factory_dyn<T: DwtFactory<T> + 'static + Copy>(
+        border_mode: BorderMode,
+        db: Box<dyn WaveletFilterProvider<T> + Send + Sync>,
+    ) -> Box<dyn IncompleteDwtExecutor<T> + Send + Sync>
+    where
+        f64: AsPrimitive<T>,
+    {
+        let filter = db.get_wavelet();
+        match filter.len() {
+            2 => T::wavelet_2_taps(border_mode, filter.as_slice().try_into().unwrap()),
+            4 => T::wavelet_4_taps(border_mode, filter.as_slice().try_into().unwrap()),
+            6 => T::wavelet_6_taps(border_mode, filter.as_slice().try_into().unwrap()),
+            8 => T::wavelet_8_taps(border_mode, filter.as_slice().try_into().unwrap()),
+            _ => T::wavelet_n_taps(border_mode, filter.as_slice()),
+        }
+    }
+
     /// Internal implementation for creating a Daubechies wavelet executor.
     fn make_daubechies_impl<
         T: DwtFactory<T>
@@ -409,5 +430,47 @@ impl Osclet {
         border_mode: BorderMode,
     ) -> Result<Box<dyn MoDwtExecutor<f64> + Send + Sync>, OscletError> {
         Self::make_modwt(provider, border_mode)
+    }
+
+    /// Creates a custom wavelet executor for `f32` signals.
+    ///
+    /// # Parameters
+    /// - `provider`: Wavelet provider
+    /// - `border_mode`: How the signal edges are handled (e.g., zero-padding, symmetric).
+    ///
+    /// # Returns
+    /// A boxed `DwtExecutor<f32>` that can perform discrete wavelet transforms.
+    pub fn make_custom_f32(
+        provider: Box<dyn WaveletFilterProvider<f32> + Send + Sync>,
+        border_mode: BorderMode,
+    ) -> Result<Box<dyn DwtExecutor<f32> + Send + Sync>, OscletError> {
+        let let_length = provider.get_wavelet().len();
+        if let_length == 0 || !let_length.is_multiple_of(2) {
+            return Err(OscletError::ZeroOrOddSizedWavelet);
+        }
+        Ok(Box::new(CompletedDwtExecutor::new(
+            Self::default_factory_dyn(border_mode, provider),
+        )))
+    }
+
+    /// Creates a custom wavelet executor for `f64` signals.
+    ///
+    /// # Parameters
+    /// - `provider`: Wavelet provider
+    /// - `border_mode`: How the signal edges are handled (e.g., zero-padding, symmetric).
+    ///
+    /// # Returns
+    /// A boxed `DwtExecutor<f32>` that can perform discrete wavelet transforms.
+    pub fn make_custom_f64(
+        provider: Box<dyn WaveletFilterProvider<f64> + Send + Sync>,
+        border_mode: BorderMode,
+    ) -> Result<Box<dyn DwtExecutor<f64> + Send + Sync>, OscletError> {
+        let let_length = provider.get_wavelet().len();
+        if let_length == 0 || !let_length.is_multiple_of(2) {
+            return Err(OscletError::ZeroOrOddSizedWavelet);
+        }
+        Ok(Box::new(CompletedDwtExecutor::new(
+            Self::default_factory_dyn(border_mode, provider),
+        )))
     }
 }

@@ -48,6 +48,7 @@ impl<T: Copy + 'static + Debug + Default + Mul<T, Output = T>> Wavelet6Taps<T>
 where
     f64: AsPrimitive<T>,
 {
+    #[allow(unused)]
     pub(crate) fn new(border_mode: BorderMode, wavelet: &[T; 6]) -> Self {
         Self {
             border_mode,

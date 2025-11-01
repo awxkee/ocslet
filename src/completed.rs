@@ -189,3 +189,40 @@ where
         Ok(output)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::completed::CompletedDwtExecutor;
+    use crate::wavelet8taps::Wavelet8Taps;
+    use crate::{BorderMode, DaubechiesFamily, DwtExecutor, WaveletFilterProvider};
+
+    #[test]
+    fn test_db8_even_big() {
+        let data_length = 86;
+        let mut input = vec![0.; data_length];
+        for i in 0..data_length {
+            input[i] = i as f32 / data_length as f32;
+        }
+        let db4 = CompletedDwtExecutor {
+            intercepted: Box::new(Wavelet8Taps::new(
+                BorderMode::Wrap,
+                DaubechiesFamily::Db4
+                    .get_wavelet()
+                    .as_slice()
+                    .try_into()
+                    .unwrap(),
+            )),
+        };
+        let dwt = db4.dwt(&input, 1).unwrap();
+
+        let reconstructed = db4.idwt(&dwt).unwrap();
+        reconstructed.iter().take(input.len()).enumerate().for_each(|(i, x)| {
+            assert!(
+                (input[i] - x).abs() < 1e-7,
+                "reconstructed difference expected to be < 1e-7, but values were ref {}, derived {}",
+                input[i],
+                x
+            );
+        });
+    }
+}

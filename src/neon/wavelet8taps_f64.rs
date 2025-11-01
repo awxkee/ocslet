@@ -340,7 +340,7 @@ impl DwtInverseExecutor<f64> for NeonWavelet8TapsF64 {
 
 impl IncompleteDwtExecutor<f64> for NeonWavelet8TapsF64 {
     fn filter_length(&self) -> usize {
-        6
+        8
     }
 }
 
