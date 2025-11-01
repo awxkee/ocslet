@@ -1,0 +1,28 @@
+[package]
+name = "osclet"
+version = "0.1.0"
+edition = "2024"
+description = "Play with wavelets! Or they will play with you."
+readme = "README.md"
+keywords = ["dwt", "wavelet"]
+license = "BSD-3-Clause OR Apache-2.0"
+authors = ["Radzivon Bartoshyk"]
+documentation = "https://github.com/awxkee/osclet"
+categories = ["algorithms", "science"]
+homepage = "https://github.com/awxkee/osclet"
+repository = "https://github.com/awxkee/osclet"
+exclude = ["*.jpg", "/assets", "*.png", "*.sh", "/assets/*"]
+rust-version = "1.87.0"
+
+[dependencies]
+num-traits = "0.2.19"
+
+[features]
+default = ["neon"]
+neon = []
+
+[package.metadata.docs.rs]
+# To build locally:
+# RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features --no-deps --open --manifest-path ./Cargo.toml
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

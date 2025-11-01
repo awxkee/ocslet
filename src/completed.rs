@@ -1,0 +1,191 @@
+/*
+ * // Copyright (c) Radzivon Bartoshyk 10/2025. All rights reserved.
+ * //
+ * // Redistribution and use in source and binary forms, with or without modification,
+ * // are permitted provided that the following conditions are met:
+ * //
+ * // 1.  Redistributions of source code must retain the above copyright notice, this
+ * // list of conditions and the following disclaimer.
+ * //
+ * // 2.  Redistributions in binary form must reproduce the above copyright notice,
+ * // this list of conditions and the following disclaimer in the documentation
+ * // and/or other materials provided with the distribution.
+ * //
+ * // 3.  Neither the name of the copyright holder nor the names of its
+ * // contributors may be used to endorse or promote products derived from
+ * // this software without specific prior written permission.
+ * //
+ * // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * // DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * // FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * // DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * // SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * // CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+use crate::err::{OscletError, try_vec};
+use crate::util::dwt_length;
+use crate::{
+    Dwt, DwtExecutor, DwtForwardExecutor, DwtInverseExecutor, IncompleteDwtExecutor, MultiDwt,
+    idwt_length,
+};
+use num_traits::{AsPrimitive, MulAdd};
+use std::ops::{Add, Mul};
+
+pub(crate) struct CompletedDwtExecutor<T> {
+    intercepted: Box<dyn IncompleteDwtExecutor<T> + Send + Sync>,
+}
+
+impl<T> CompletedDwtExecutor<T> {
+    pub(crate) fn new(intercepted: Box<dyn IncompleteDwtExecutor<T> + Send + Sync>) -> Self {
+        Self { intercepted }
+    }
+}
+
+impl<T> DwtForwardExecutor<T> for CompletedDwtExecutor<T> {
+    fn execute_forward(
+        &self,
+        input: &[T],
+        approx: &mut [T],
+        details: &mut [T],
+    ) -> Result<(), OscletError> {
+        self.intercepted.execute_forward(input, approx, details)
+    }
+}
+
+impl<T> DwtInverseExecutor<T> for CompletedDwtExecutor<T> {
+    fn execute_inverse(
+        &self,
+        approx: &[T],
+        details: &[T],
+        output: &mut [T],
+    ) -> Result<(), OscletError> {
+        self.intercepted.execute_inverse(approx, details, output)
+    }
+}
+
+impl<T> IncompleteDwtExecutor<T> for CompletedDwtExecutor<T> {
+    fn filter_length(&self) -> usize {
+        self.intercepted.filter_length()
+    }
+}
+
+impl<T: Copy + Default + MulAdd<T, Output = T> + Add<T, Output = T> + Mul<T, Output = T> + 'static>
+    DwtExecutor<T> for CompletedDwtExecutor<T>
+where
+    f64: AsPrimitive<T>,
+{
+    fn dwt(&self, signal: &[T], level: usize) -> Result<Dwt<T>, OscletError> {
+        if level == 0 || level == 1 {
+            let approx_length = dwt_length(signal.len(), self.intercepted.filter_length());
+            let mut approx = try_vec![T::default(); approx_length];
+            let mut details = try_vec![T::default(); approx_length];
+
+            self.intercepted
+                .execute_forward(signal, &mut approx, &mut details)?;
+
+            Ok(Dwt {
+                approximations: approx,
+                details,
+            })
+        } else {
+            let mut current_signal = signal.to_vec();
+            let mut approx = vec![];
+            let mut details = vec![];
+
+            let filter_length = self.intercepted.filter_length();
+
+            for _ in 0..level {
+                if filter_length > signal.len() {
+                    return Err(OscletError::BufferWasTooSmallForLevel);
+                }
+                let approx_length = dwt_length(signal.len(), filter_length);
+
+                approx = try_vec![T::default(); approx_length];
+                details = try_vec![T::default(); approx_length];
+
+                // Forward DWT on current signal
+                self.intercepted
+                    .execute_forward(&current_signal, &mut approx, &mut details)?;
+
+                // Next level uses only the approximation
+                current_signal = approx.to_vec();
+            }
+
+            Ok(Dwt {
+                approximations: approx,
+                details,
+            })
+        }
+    }
+    fn multi_dwt(&self, signal: &[T], levels: usize) -> Result<MultiDwt<T>, OscletError> {
+        if levels == 0 || levels == 1 {
+            let approx_length = dwt_length(signal.len(), self.intercepted.filter_length());
+            let mut approx = try_vec![T::default(); approx_length];
+            let mut details = try_vec![T::default(); approx_length];
+
+            self.intercepted
+                .execute_forward(signal, &mut approx, &mut details)?;
+
+            Ok(MultiDwt {
+                levels: vec![Dwt {
+                    approximations: approx,
+                    details,
+                }],
+            })
+        } else {
+            let mut current_signal = signal.to_vec();
+            let mut approx = vec![];
+            let mut details = vec![];
+
+            let filter_length = self.intercepted.filter_length();
+
+            let mut levels_store = Vec::with_capacity(levels);
+
+            for _ in 0..levels {
+                if filter_length > signal.len() {
+                    return Err(OscletError::BufferWasTooSmallForLevel);
+                }
+                let approx_length = dwt_length(signal.len(), filter_length);
+
+                approx = try_vec![T::default(); approx_length];
+                details = try_vec![T::default(); approx_length];
+
+                // Forward DWT on current signal
+                self.intercepted
+                    .execute_forward(&current_signal, &mut approx, &mut details)?;
+
+                // Next level uses only the approximation
+                current_signal = approx.to_vec();
+
+                levels_store.push(Dwt {
+                    approximations: approx,
+                    details,
+                });
+            }
+
+            Ok(MultiDwt {
+                levels: levels_store,
+            })
+        }
+    }
+
+    fn idwt(&self, dwt: &Dwt<T>) -> Result<Vec<T>, OscletError> {
+        if dwt.details.len() != dwt.approximations.len() {
+            return Err(OscletError::ApproxDetailsNotMatches(
+                dwt.approximations.len(),
+                dwt.details.len(),
+            ));
+        }
+        let output_length = idwt_length(dwt.details.len(), self.intercepted.filter_length());
+        let mut output = try_vec![T::default(); output_length];
+
+        self.intercepted
+            .execute_inverse(&dwt.approximations, &dwt.details, &mut output)?;
+
+        Ok(output)
+    }
+}
