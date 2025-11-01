@@ -15,7 +15,6 @@ workloads where speed and precision are critical.
 - Optimized for **ARM NEON** and **x86 SIMD** instructions.
 - Thread-safe and can be used in parallel contexts (`Send + Sync`).
 - Customizable **border modes** for signal padding
--
 
 ```rust
 use osclet::{make_daubechies_f64, DaubechiesFamily, BorderMode, DwtExecutor};
