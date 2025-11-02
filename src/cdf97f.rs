@@ -285,7 +285,7 @@ where
     f64: AsPrimitive<T>,
 {
     fn filter_length(&self) -> usize {
-        8
+        9
     }
 }
 
