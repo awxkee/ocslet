@@ -113,6 +113,13 @@ impl DwtFactory<f32> for f32 {
             use crate::neon::NeonWavelet6TapsF32;
             Box::new(NeonWavelet6TapsF32::new(border_mode, dwt))
         }
+        #[cfg(all(target_arch = "x86_64", feature = "avx"))]
+        {
+            if has_valid_avx() {
+                use crate::avx::AvxWavelet6TapsF32;
+                return Box::new(AvxWavelet6TapsF32::new(border_mode, dwt));
+            }
+        }
         #[cfg(not(all(target_arch = "aarch64", feature = "neon")))]
         {
             use crate::wavelet6taps::Wavelet6Taps;

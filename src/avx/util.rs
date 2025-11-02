@@ -62,6 +62,15 @@ pub(crate) fn _mm256_hsum_pd(v: __m256d) -> __m128d {
     ))
 }
 
+#[inline]
+#[target_feature(enable = "avx")]
+pub(crate) fn _mm256_hsum_ps(v: __m256) -> __m128 {
+    _mm_hsum_ps(_mm_add_ps(
+        _mm256_castps256_ps128(v),
+        _mm256_extractf128_ps::<1>(v),
+    ))
+}
+
 // #[inline]
 // #[target_feature(enable = "avx2")]
 // pub(crate) fn _mm256_hpadd_ps(v: __m256) -> __m256 {
