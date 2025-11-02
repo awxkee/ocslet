@@ -269,7 +269,7 @@ where
     i32: AsPrimitive<V> + AsPrimitive<T>,
 {
     fn filter_length(&self) -> usize {
-        5
+        6
     }
 }
 
