@@ -104,7 +104,7 @@ impl AvxWavelet6TapsF32 {
                 .zip(details.chunks_exact_mut(2))
                 .enumerate()
             {
-                let base0 = 2 * 4 * i;
+                let base0 = 2 * 2 * i;
 
                 let input0 = padded_input.get_unchecked(base0..);
 
@@ -126,8 +126,11 @@ impl AvxWavelet6TapsF32 {
                 let wa2 = _mm_hadd_ps(_mm256_castps256_ps128(wa0), _mm256_extractf128_ps::<1>(wa0));
                 let wd2 = _mm_hadd_ps(_mm256_castps256_ps128(wd0), _mm256_extractf128_ps::<1>(wd0));
 
-                _mm_storeu_ps(approx.as_mut_ptr(), wa2);
-                _mm_storeu_ps(detail.as_mut_ptr(), wd2);
+                let wa2 = _mm_hadd_ps(wa2, wa2);
+                let wd2 = _mm_hadd_ps(wd2, wd2);
+
+                _mm_storeu_si64(approx.as_mut_ptr().cast(), _mm_castps_si128(wa2));
+                _mm_storeu_si64(detail.as_mut_ptr().cast(), _mm_castps_si128(wd2));
 
                 processed += 2;
             }
