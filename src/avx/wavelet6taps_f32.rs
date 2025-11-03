@@ -26,7 +26,7 @@
  * // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-use crate::avx::util::_mm256_hsum_ps;
+use crate::avx::util::{_mm256_hpadd2_ps, _mm256_hsum_ps, shuffle};
 use crate::border_mode::BorderMode;
 use crate::err::OscletError;
 use crate::filter_padding::make_arena_1d;
@@ -97,71 +97,44 @@ impl AvxWavelet6TapsF32 {
             let h0 = _mm256_loadu_ps(self.low_pass.as_ptr());
             let g0 = _mm256_loadu_ps(self.high_pass.as_ptr());
 
-            // let mut processed = 0usize;
-            //
-            // for (i, (approx, detail)) in approx
-            //     .chunks_exact_mut(4)
-            //     .zip(details.chunks_exact_mut(4))
-            //     .enumerate()
-            // {
-            //     let base0 = 2 * 4 * i;
-            //
-            //     let input0 = padded_input.get_unchecked(base0..);
-            //
-            //     let xw00 = _mm256_loadu_ps(input0.as_ptr());
-            //     let xw01 = _mm256_setr_m128(
-            //         _mm_loadu_ps(input0.get_unchecked(8..).as_ptr()),
-            //         _mm_castsi128_ps(_mm_loadu_si64(input0.get_unchecked(12..).as_ptr().cast())),
-            //     );
-            //
-            //     let a0 = _mm256_mul_ps(xw00, h0);
-            //     let d0 = _mm256_mul_ps(xw00, g0);
-            //
-            //     let p1 = _mm256_castpd_ps(_mm256_permute4x64_pd::<{ shuffle(0, 3, 2, 1) }>(
-            //         _mm256_castps_pd(xw00),
-            //     ));
-            //
-            //     let a1 = _mm256_mul_ps(p1, h0);
-            //     let d1 = _mm256_mul_ps(p1, g0);
-            //
-            //     const HI_LO: i32 = 0b0010_0001;
-            //
-            //     let p2 = _mm256_permute2f128_ps::<HI_LO>(xw00, xw01);
-            //
-            //     let a2 = _mm256_mul_ps(p2, h0);
-            //     let d2 = _mm256_mul_ps(p2, g0);
-            //
-            //     // last elements starts from 64b block so we need to shift it to the start and
-            //     // blend with other 'end'
-            //     let p3 = _mm256_castpd_ps(_mm256_permute4x64_pd::<{ shuffle(0, 0, 0, 3) }>(
-            //         _mm256_castps_pd(xw00),
-            //     ));
-            //     let p3_top = _mm256_castpd_ps(_mm256_permute4x64_pd::<{ shuffle(2, 1, 0, 0) }>(
-            //         _mm256_castps_pd(xw01),
-            //     ));
-            //     let p3 = _mm256_castsi256_ps(_mm256_blend_epi32::<0b1111_1100>(
-            //         _mm256_castps_si256(p3),
-            //         _mm256_castps_si256(p3_top),
-            //     ));
-            //
-            //     let a3 = _mm256_mul_ps(p3, h0);
-            //     let d3 = _mm256_mul_ps(p3, g0);
-            //
-            //     let wa0 = _mm256_hpadd2_ps(_mm256_hpadd2_ps(a0, a1), _mm256_hpadd2_ps(a2, a3));
-            //     let wd0 = _mm256_hpadd2_ps(_mm256_hpadd2_ps(d0, d1), _mm256_hpadd2_ps(d2, d3));
-            //
-            //     let wa2 = _mm_hadd_ps(_mm256_castps256_ps128(wa0), _mm256_extractf128_ps::<1>(wa0));
-            //     let wd2 = _mm_hadd_ps(_mm256_castps256_ps128(wd0), _mm256_extractf128_ps::<1>(wd0));
-            //
-            //     _mm_storeu_ps(approx.as_mut_ptr(), wa2);
-            //     _mm_storeu_ps(detail.as_mut_ptr(), wd2);
-            //
-            //     processed += 4;
-            // }
-            //
-            // let approx = approx.chunks_exact_mut(4).into_remainder();
-            // let details = details.chunks_exact_mut(4).into_remainder();
-            // let padded_input = padded_input.get_unchecked(processed * 2..);
+            let mut processed = 0usize;
+
+            for (i, (approx, detail)) in approx
+                .chunks_exact_mut(4)
+                .zip(details.chunks_exact_mut(4))
+                .enumerate()
+            {
+                let base0 = 2 * 4 * i;
+
+                let input0 = padded_input.get_unchecked(base0..);
+
+                let xw00 = _mm256_loadu_ps(input0.as_ptr());
+
+                let a0 = _mm256_mul_ps(xw00, h0);
+                let d0 = _mm256_mul_ps(xw00, g0);
+
+                let p1 = _mm256_castpd_ps(_mm256_permute4x64_pd::<{ shuffle(0, 3, 2, 1) }>(
+                    _mm256_castps_pd(xw00),
+                ));
+
+                let a1 = _mm256_mul_ps(p1, h0);
+                let d1 = _mm256_mul_ps(p1, g0);
+
+                let wa0 = _mm256_hpadd2_ps(a0, a1);
+                let wd0 = _mm256_hpadd2_ps(d0, d1);
+
+                let wa2 = _mm_hadd_ps(_mm256_castps256_ps128(wa0), _mm256_extractf128_ps::<1>(wa0));
+                let wd2 = _mm_hadd_ps(_mm256_castps256_ps128(wd0), _mm256_extractf128_ps::<1>(wd0));
+
+                _mm_storeu_ps(approx.as_mut_ptr(), wa2);
+                _mm_storeu_ps(detail.as_mut_ptr(), wd2);
+
+                processed += 4;
+            }
+
+            let approx = approx.chunks_exact_mut(4).into_remainder();
+            let details = details.chunks_exact_mut(4).into_remainder();
+            let padded_input = padded_input.get_unchecked(processed * 2..);
 
             for (i, (approx, detail)) in approx.iter_mut().zip(details.iter_mut()).enumerate() {
                 let base = 2 * i;
