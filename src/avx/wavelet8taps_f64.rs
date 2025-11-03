@@ -145,49 +145,54 @@ impl DwtInverseExecutor<f64> for AvxWavelet8TapsF64 {
             let safe_start = FILTER_OFFSET;
             // 2*x - off + len >= output.len()
             // x >= (output.len() + off - len)/2
-            let safe_end = ((output.len() + FILTER_OFFSET).saturating_sub(FILTER_LENGTH)) / 2;
-            for i in 0..safe_start {
-                let (h, g) = (
-                    _mm_set1_pd(*approx.get_unchecked(i)),
-                    _mm_set1_pd(*details.get_unchecked(i)),
-                );
-                let k = 2 * i as isize - FILTER_OFFSET as isize;
-                for j in 0..8 {
-                    let k = k + j as isize;
-                    if k >= 0 && k < rec_len as isize {
-                        let mut w = _mm_fmadd_sd(
-                            _mm_set1_pd(self.high_pass[j]),
-                            g,
-                            _mm_load_sd(output.get_unchecked(k as usize) as *const f64),
-                        );
-                        w = _mm_fmadd_sd(_mm_set1_pd(self.low_pass[j]), h, w);
-                        _mm_store_sd(output.get_unchecked_mut(k as usize) as *mut f64, w);
+            let mut safe_end = ((output.len() + FILTER_OFFSET).saturating_sub(FILTER_LENGTH)) / 2;
+
+            if safe_start < safe_end {
+                for i in 0..safe_start {
+                    let (h, g) = (
+                        _mm_set1_pd(*approx.get_unchecked(i)),
+                        _mm_set1_pd(*details.get_unchecked(i)),
+                    );
+                    let k = 2 * i as isize - FILTER_OFFSET as isize;
+                    for j in 0..8 {
+                        let k = k + j as isize;
+                        if k >= 0 && k < rec_len as isize {
+                            let mut w = _mm_fmadd_sd(
+                                _mm_set1_pd(self.high_pass[j]),
+                                g,
+                                _mm_load_sd(output.get_unchecked(k as usize) as *const f64),
+                            );
+                            w = _mm_fmadd_sd(_mm_set1_pd(self.low_pass[j]), h, w);
+                            _mm_store_sd(output.get_unchecked_mut(k as usize) as *mut f64, w);
+                        }
                     }
                 }
-            }
 
-            let h0 = _mm256_loadu_pd(self.low_pass.as_ptr());
-            let g0 = _mm256_loadu_pd(self.high_pass.as_ptr());
+                let h0 = _mm256_loadu_pd(self.low_pass.as_ptr());
+                let g0 = _mm256_loadu_pd(self.high_pass.as_ptr());
 
-            let h2 = _mm256_loadu_pd(self.low_pass.get_unchecked(4..).as_ptr());
-            let g2 = _mm256_loadu_pd(self.high_pass.get_unchecked(4..).as_ptr());
+                let h2 = _mm256_loadu_pd(self.low_pass.get_unchecked(4..).as_ptr());
+                let g2 = _mm256_loadu_pd(self.high_pass.get_unchecked(4..).as_ptr());
 
-            for i in safe_start..safe_end {
-                let (h, g) = (
-                    _mm256_set1_pd(*approx.get_unchecked(i)),
-                    _mm256_set1_pd(*details.get_unchecked(i)),
-                );
-                let k = 2 * i as isize - FILTER_OFFSET as isize;
-                let part = output.get_unchecked_mut(k as usize..);
+                for i in safe_start..safe_end {
+                    let (h, g) = (
+                        _mm256_set1_pd(*approx.get_unchecked(i)),
+                        _mm256_set1_pd(*details.get_unchecked(i)),
+                    );
+                    let k = 2 * i as isize - FILTER_OFFSET as isize;
+                    let part = output.get_unchecked_mut(k as usize..);
 
-                let w0 = _mm256_loadu_pd(part.as_ptr());
-                let w2 = _mm256_loadu_pd(part.get_unchecked(4..).as_ptr());
+                    let w0 = _mm256_loadu_pd(part.as_ptr());
+                    let w2 = _mm256_loadu_pd(part.get_unchecked(4..).as_ptr());
 
-                let q0 = _mm256_fmadd_pd(g0, g, _mm256_fmadd_pd(h0, h, w0));
-                let q4 = _mm256_fmadd_pd(g2, g, _mm256_fmadd_pd(h2, h, w2));
+                    let q0 = _mm256_fmadd_pd(g0, g, _mm256_fmadd_pd(h0, h, w0));
+                    let q4 = _mm256_fmadd_pd(g2, g, _mm256_fmadd_pd(h2, h, w2));
 
-                _mm256_storeu_pd(part.as_mut_ptr(), q0);
-                _mm256_storeu_pd(part.get_unchecked_mut(4..).as_mut_ptr(), q4);
+                    _mm256_storeu_pd(part.as_mut_ptr(), q0);
+                    _mm256_storeu_pd(part.get_unchecked_mut(4..).as_mut_ptr(), q4);
+                }
+            } else {
+                safe_end = 0usize;
             }
 
             for i in safe_end..approx.len() {

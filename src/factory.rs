@@ -30,7 +30,7 @@ use crate::{BorderMode, IncompleteDwtExecutor};
 
 #[inline]
 #[cfg(all(target_arch = "x86_64", feature = "avx"))]
-fn has_valid_avx() -> bool {
+pub(crate) fn has_valid_avx() -> bool {
     std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma")
 }
 
@@ -50,6 +50,10 @@ pub(crate) trait DwtFactory<T> {
     fn wavelet_8_taps(
         border_mode: BorderMode,
         dwt: &[T; 8],
+    ) -> Box<dyn IncompleteDwtExecutor<T> + Send + Sync>;
+    fn wavelet_10_taps(
+        border_mode: BorderMode,
+        dwt: &[T; 10],
     ) -> Box<dyn IncompleteDwtExecutor<T> + Send + Sync>;
     fn wavelet_n_taps(
         border_mode: BorderMode,
@@ -148,6 +152,14 @@ impl DwtFactory<f32> for f32 {
             use crate::wavelet8taps::Wavelet8Taps;
             Box::new(Wavelet8Taps::new(border_mode, dwt))
         }
+    }
+
+    fn wavelet_10_taps(
+        border_mode: BorderMode,
+        dwt: &[f32; 10],
+    ) -> Box<dyn IncompleteDwtExecutor<f32> + Send + Sync> {
+        use crate::wavelet10taps::Wavelet10Taps;
+        Box::new(Wavelet10Taps::new(border_mode, dwt))
     }
 
     fn wavelet_n_taps(
@@ -250,6 +262,14 @@ impl DwtFactory<f64> for f64 {
             use crate::wavelet8taps::Wavelet8Taps;
             Box::new(Wavelet8Taps::new(border_mode, dwt))
         }
+    }
+
+    fn wavelet_10_taps(
+        border_mode: BorderMode,
+        dwt: &[f64; 10],
+    ) -> Box<dyn IncompleteDwtExecutor<f64> + Send + Sync> {
+        use crate::wavelet10taps::Wavelet10Taps;
+        Box::new(Wavelet10Taps::new(border_mode, dwt))
     }
 
     fn wavelet_n_taps(

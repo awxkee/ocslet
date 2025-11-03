@@ -26,10 +26,21 @@
  * // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-use crate::border_mode::{BorderMode, reflect_index, reflect_index_101};
+use crate::border_mode::BorderMode;
 use crate::err::{OscletError, try_vec};
+use crate::fast_divide::{DividerIsize, RemEuclidFast};
 use num_traits::AsPrimitive;
 use std::ops::Range;
+
+#[inline]
+pub(crate) fn reflect_index(i: isize, n: isize, divider: &DividerIsize) -> usize {
+    (n - i.rem_euclid_fast(divider) - 1) as usize
+}
+
+#[inline(always)]
+pub(crate) fn reflect_index_101(i: isize, n: isize, divider: &DividerIsize) -> usize {
+    (n - i.rem_euclid_fast(divider)) as usize
+}
 
 pub(crate) fn make_arena_1d<T: Copy + Default + Clone + 'static>(
     data: &[T],
@@ -71,9 +82,10 @@ where
             }
             BorderMode::Wrap => {
                 let reshaped = &mut padded[range.start..range.end];
+                let divider = DividerIsize::new(data.len() as isize);
                 for (idx, dst) in reshaped.iter_mut().enumerate() {
                     let item = (range.start as isize - pad_left as isize + idx as isize)
-                        .rem_euclid(data.len() as isize) as usize;
+                        .rem_euclid_fast(&divider) as usize;
                     unsafe {
                         *dst = *data.get_unchecked(item);
                     }
@@ -81,10 +93,12 @@ where
             }
             BorderMode::Reflect => {
                 let reshaped = &mut padded[range.start..range.end];
+                let divider = DividerIsize::new(data.len() as isize);
                 for (idx, dst) in reshaped.iter_mut().enumerate() {
                     let item = reflect_index(
                         range.start as isize - pad_left as isize + idx as isize,
                         data.len() as isize,
+                        &divider,
                     );
                     unsafe {
                         *dst = *data.get_unchecked(item);
@@ -93,13 +107,24 @@ where
             }
             BorderMode::Reflect101 => {
                 let reshaped = &mut padded[range.start..range.end];
-                for (idx, dst) in reshaped.iter_mut().enumerate() {
-                    let item = reflect_index_101(
-                        range.start as isize - pad_left as isize + idx as isize,
-                        data.len() as isize,
-                    );
-                    unsafe {
-                        *dst = *data.get_unchecked(item);
+                if data.len() == 1 {
+                    for dst in reshaped.iter_mut() {
+                        unsafe {
+                            *dst = *data.get_unchecked(0);
+                        }
+                    }
+                } else {
+                    let divider = DividerIsize::new(data.len() as isize - 1);
+                    let n_r = data.len() as isize - 1;
+                    for (idx, dst) in reshaped.iter_mut().enumerate() {
+                        let item = reflect_index_101(
+                            range.start as isize - pad_left as isize + idx as isize,
+                            n_r,
+                            &divider,
+                        );
+                        unsafe {
+                            *dst = *data.get_unchecked(item);
+                        }
                     }
                 }
             }
@@ -148,7 +173,5 @@ mod tests {
         assert_eq!(arena4[1], 2);
         assert_eq!(arena4[7], 4);
         assert_eq!(arena4[8], 3);
-
-        println!("{}", reflect_index_101(15, 1));
     }
 }

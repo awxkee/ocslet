@@ -1,5 +1,5 @@
 /*
- * // Copyright (c) Radzivon Bartoshyk 10/2025. All rights reserved.
+ * // Copyright (c) Radzivon Bartoshyk 11/2025. All rights reserved.
  * //
  * // Redistribution and use in source and binary forms, with or without modification,
  * // are permitted provided that the following conditions are met:
@@ -37,19 +37,19 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Mul};
 
-pub(crate) struct Wavelet8Taps<T> {
+pub(crate) struct Wavelet10Taps<T> {
     phantom_data: PhantomData<T>,
     border_mode: BorderMode,
-    low_pass: [T; 8],
-    high_pass: [T; 8],
+    low_pass: [T; 10],
+    high_pass: [T; 10],
 }
 
-impl<T: Copy + 'static + Debug + Default + Mul<T, Output = T>> Wavelet8Taps<T>
+impl<T: Copy + 'static + Debug + Default + Mul<T, Output = T>> Wavelet10Taps<T>
 where
     f64: AsPrimitive<T>,
 {
     #[allow(unused)]
-    pub(crate) fn new(border_mode: BorderMode, wavelet: &[T; 8]) -> Self {
+    pub(crate) fn new(border_mode: BorderMode, wavelet: &[T; 10]) -> Self {
         Self {
             border_mode,
             low_pass: *wavelet,
@@ -60,7 +60,7 @@ where
 }
 
 impl<T: Copy + 'static + MulAdd<T, Output = T> + Add<T, Output = T> + Mul<T, Output = T> + Default>
-    DwtForwardExecutor<T> for Wavelet8Taps<T>
+    DwtForwardExecutor<T> for Wavelet10Taps<T>
 where
     f64: AsPrimitive<T>,
 {
@@ -70,10 +70,10 @@ where
         approx: &mut [T],
         details: &mut [T],
     ) -> Result<(), OscletError> {
-        let half = dwt_length(input.len(), 8);
+        let half = dwt_length(input.len(), 10);
 
         if input.len() < 8 {
-            return Err(OscletError::MinFilterSize(input.len(), 8));
+            return Err(OscletError::MinFilterSize(input.len(), 10));
         }
 
         if approx.len() != half {
@@ -83,7 +83,7 @@ where
             return Err(OscletError::ApproxDetailsSize(details.len()));
         }
 
-        const FILTER_SIZE: usize = 8;
+        const FILTER_SIZE: usize = 10;
 
         let whole_size = (2 * half + FILTER_SIZE - 2) - input.len();
         let left_pad = whole_size / 2;
@@ -107,6 +107,8 @@ where
                 let x5 = input.get_unchecked(5);
                 let x6 = input.get_unchecked(6);
                 let x7 = input.get_unchecked(7);
+                let x8 = input.get_unchecked(8);
+                let x9 = input.get_unchecked(9);
 
                 a = fmla(self.low_pass[0], *x0, a);
                 d = fmla(self.high_pass[0], *x0, d);
@@ -132,6 +134,12 @@ where
                 a = fmla(self.low_pass[7], *x7, a);
                 d = fmla(self.high_pass[7], *x7, d);
 
+                a = fmla(self.low_pass[8], *x8, a);
+                d = fmla(self.high_pass[8], *x8, d);
+
+                a = fmla(self.low_pass[9], *x9, a);
+                d = fmla(self.high_pass[9], *x9, d);
+
                 *approx = a;
                 *detail = d;
             }
@@ -141,7 +149,7 @@ where
 }
 
 impl<T: Copy + 'static + MulAdd<T, Output = T> + Add<T, Output = T> + Mul<T, Output = T> + Default>
-    DwtInverseExecutor<T> for Wavelet8Taps<T>
+    DwtInverseExecutor<T> for Wavelet10Taps<T>
 where
     f64: AsPrimitive<T>,
 {
@@ -158,14 +166,14 @@ where
             ));
         }
 
-        let rec_len = idwt_length(approx.len(), 8);
+        let rec_len = idwt_length(approx.len(), 10);
 
         if output.len() != rec_len {
             return Err(OscletError::OutputSizeIsTooSmall(output.len(), rec_len));
         }
 
-        const FILTER_OFFSET: usize = 6;
-        const FILTER_LENGTH: usize = 8;
+        const FILTER_OFFSET: usize = 8;
+        const FILTER_LENGTH: usize = 10;
 
         unsafe {
             let safe_start = FILTER_OFFSET;
@@ -177,7 +185,7 @@ where
                 for i in 0..safe_start {
                     let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
                     let k = 2 * i as isize - FILTER_OFFSET as isize;
-                    for j in 0..8 {
+                    for j in 0..10 {
                         let k = k + j as isize;
                         if k >= 0 && k < rec_len as isize {
                             *output.get_unchecked_mut(k as usize) = fmla(
@@ -233,6 +241,16 @@ where
                         h,
                         fmla(self.high_pass[7], g, *part.get_unchecked(7)),
                     );
+                    *part.get_unchecked_mut(8) = fmla(
+                        self.low_pass[8],
+                        h,
+                        fmla(self.high_pass[8], g, *part.get_unchecked(8)),
+                    );
+                    *part.get_unchecked_mut(9) = fmla(
+                        self.low_pass[9],
+                        h,
+                        fmla(self.high_pass[9], g, *part.get_unchecked(9)),
+                    );
                 }
             } else {
                 safe_end = 0usize;
@@ -241,7 +259,7 @@ where
             for i in safe_end..approx.len() {
                 let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
                 let k = 2 * i as isize - FILTER_OFFSET as isize;
-                for j in 0..8 {
+                for j in 0..10 {
                     let k = k + j as isize;
                     if k >= 0 && k < rec_len as isize {
                         *output.get_unchecked_mut(k as usize) = fmla(
@@ -266,12 +284,12 @@ impl<
         + Default
         + Send
         + Sync,
-> IncompleteDwtExecutor<T> for Wavelet8Taps<T>
+> IncompleteDwtExecutor<T> for Wavelet10Taps<T>
 where
     f64: AsPrimitive<T>,
 {
     fn filter_length(&self) -> usize {
-        8
+        10
     }
 }
 
@@ -281,67 +299,68 @@ mod tests {
     use crate::{DaubechiesFamily, WaveletFilterProvider};
 
     #[test]
-    fn test_db8_odd() {
+    fn test_db5_odd() {
         let input = vec![
             1.0, 2.0, 3.0, 4.0, 2.0, 1.0, 0.0, 1.0, 2.4, 6.5, 2.4, 6.4, 5.2, 0.6, 0.5, 1.3, 2.5,
         ];
-        let db4 = Wavelet8Taps::new(
+        let db4 = Wavelet10Taps::new(
             BorderMode::Wrap,
-            DaubechiesFamily::Db4
+            DaubechiesFamily::Db5
                 .get_wavelet()
                 .as_slice()
                 .try_into()
                 .unwrap(),
         );
-        let out_length = dwt_length(input.len(), 8);
+        let out_length = dwt_length(input.len(), 10);
         let mut approx = vec![0.0; out_length];
         let mut details = vec![0.0; out_length];
         db4.execute_forward(&input, &mut approx, &mut details)
             .unwrap();
 
-        const REFERENCE_APPROX: [f64; 12] = [
-            5.40180316, 1.17674293, 2.27895053, 3.08695254, 4.82517499, 0.91029972, 1.96020043,
-            5.58301587, 8.40990105, 1.50316223, 2.42249936, 1.81502786,
+        const REFERENCE_APPROX: [f64; 13] = [
+            7.76308732, 4.31346037, 1.56478564, 2.0152442, 3.56281138, 4.58718134, 0.3541704,
+            2.85175073, 5.65669193, 8.10768146, 1.19172576, 2.51812658, 1.90731395,
         ];
-        const REFERENCE_DETAILS: [f64; 12] = [
-            -1.48628267,
-            0.41816403,
-            -1.0992322,
-            -0.15292615,
-            -0.32731146,
-            -3.79371528,
-            0.7310401,
-            0.56575684,
-            0.75931276,
-            0.22144916,
-            0.66611246,
-            -0.09543936,
+        const REFERENCE_DETAILS: [f64; 13] = [
+            -1.63683102,
+            0.4689461,
+            -1.17579949,
+            0.13929415,
+            -0.43849194,
+            -3.73867239,
+            0.17971352,
+            1.34570881,
+            0.03313086,
+            0.65749801,
+            0.28165624,
+            0.29616734,
+            0.48934456,
         ];
 
         approx.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_APPROX[i] - x).abs() < 1e-7,
-                "approx difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (REFERENCE_APPROX[i] - x).abs() < 1e-5,
+                "approx difference expected to be < 1e-5, but values were ref {}, derived {}",
                 REFERENCE_APPROX[i],
                 x
             );
         });
         details.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_DETAILS[i] - x).abs() < 1e-7,
-                "details difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (REFERENCE_DETAILS[i] - x).abs() < 1e-5,
+                "details difference expected to be < 1e-5, but values were ref {}, derived {}",
                 REFERENCE_DETAILS[i],
                 x
             );
         });
 
-        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 8)];
+        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 10)];
         db4.execute_inverse(&approx, &details, &mut reconstructed)
             .unwrap();
         reconstructed.iter().take(input.len()).enumerate().for_each(|(i, x)| {
             assert!(
-                (input[i] - x).abs() < 1e-7,
-                "reconstructed difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (input[i] - x).abs() < 1e-5,
+                "reconstructed difference expected to be < 1e-5, but values were ref {}, derived {}",
                 input[i],
                 x
             );
@@ -349,66 +368,67 @@ mod tests {
     }
 
     #[test]
-    fn test_db8_even() {
+    fn test_db5_even() {
         let input = vec![
             1.0, 2.0, 3.0, 4.0, 2.0, 1.0, 0.0, 1.0, 2.4, 6.5, 2.4, 6.4, 5.2, 0.6, 0.5, 1.3,
         ];
-        let db4 = Wavelet8Taps::new(
+        let db5 = Wavelet10Taps::new(
             BorderMode::Wrap,
-            DaubechiesFamily::Db4
+            DaubechiesFamily::Db5
                 .get_wavelet()
                 .as_slice()
                 .try_into()
                 .unwrap(),
         );
-        let out_length = dwt_length(input.len(), 8);
+        let out_length = dwt_length(input.len(), 10);
         let mut approx = vec![0.0; out_length];
         let mut details = vec![0.0; out_length];
-        db4.execute_forward(&input, &mut approx, &mut details)
+        db5.execute_forward(&input, &mut approx, &mut details)
             .unwrap();
 
-        const REFERENCE_APPROX: [f64; 11] = [
-            8.34997913, 1.83684144, 1.23683239, 3.08695254, 4.82517499, 0.91029972, 1.96020043,
-            5.58301587, 8.34997913, 1.83684144, 1.23683239,
+        const REFERENCE_APPROX: [f64; 12] = [
+            5.67889878, 7.9758377, 1.616079, 1.16256715, 3.56281138, 4.58718134, 0.3541704,
+            2.85175073, 5.67889878, 7.9758377, 1.616079, 1.16256715,
         ];
-        const REFERENCE_DETAILS: [f64; 11] = [
-            -0.54333491,
-            0.1170128,
-            -1.05129466,
-            -0.15292615,
-            -0.32731146,
-            -3.79371528,
-            0.7310401,
-            0.56575684,
-            -0.54333491,
-            0.1170128,
-            -1.05129466,
+        const REFERENCE_DETAILS: [f64; 12] = [
+            -1.03271544,
+            0.16927413,
+            -1.06111809,
+            0.12152867,
+            -0.43849194,
+            -3.73867239,
+            0.17971352,
+            1.34570881,
+            -1.03271544,
+            0.16927413,
+            -1.06111809,
+            0.12152867,
         ];
 
         approx.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_APPROX[i] - x).abs() < 1e-7,
-                "approx difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (REFERENCE_APPROX[i] - x).abs() < 1e-5,
+                "approx difference expected to be < 1e-5, but values were ref {}, derived {}",
                 REFERENCE_APPROX[i],
                 x
             );
         });
         details.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_DETAILS[i] - x).abs() < 1e-7,
-                "details difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (REFERENCE_DETAILS[i] - x).abs() < 1e-5,
+                "details difference expected to be < 1e-5, but values were ref {}, derived {}",
                 REFERENCE_DETAILS[i],
                 x
             );
         });
 
-        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 8)];
-        db4.execute_inverse(&approx, &details, &mut reconstructed)
+        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 10)];
+        db5.execute_inverse(&approx, &details, &mut reconstructed)
             .unwrap();
         reconstructed.iter().take(input.len()).enumerate().for_each(|(i, x)| {
             assert!(
-                (input[i] - x).abs() < 1e-7,
-                "reconstructed difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (input[i] - x).abs() < 1e-5,
+                "reconstructed difference expected to be < 1e-5, but values were ref {}, derived {}",
                 input[i],
                 x
             );
@@ -422,27 +442,27 @@ mod tests {
         for i in 0..data_length {
             input[i] = i as f32 / data_length as f32;
         }
-        let db4 = Wavelet8Taps::new(
+        let db4 = Wavelet10Taps::new(
             BorderMode::Wrap,
-            DaubechiesFamily::Db4
+            DaubechiesFamily::Db5
                 .get_wavelet()
                 .as_slice()
                 .try_into()
                 .unwrap(),
         );
-        let out_length = dwt_length(input.len(), 8);
+        let out_length = dwt_length(input.len(), 10);
         let mut approx = vec![0.0; out_length];
         let mut details = vec![0.0; out_length];
         db4.execute_forward(&input, &mut approx, &mut details)
             .unwrap();
 
-        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 8)];
+        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 10)];
         db4.execute_inverse(&approx, &details, &mut reconstructed)
             .unwrap();
         reconstructed.iter().take(input.len()).enumerate().for_each(|(i, x)| {
             assert!(
-                (input[i] - x).abs() < 1e-7,
-                "reconstructed difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (input[i] - x).abs() < 1e-5,
+                "reconstructed difference expected to be < 1e-5, but values were ref {}, derived {}",
                 input[i],
                 x
             );

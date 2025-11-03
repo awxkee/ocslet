@@ -43,17 +43,3 @@ pub enum BorderMode {
     /// If filter goes out of bounds image will be replicated with rule `000000|abcdefgh|000000`
     Zeros,
 }
-
-#[inline]
-pub(crate) fn reflect_index(i: isize, n: isize) -> usize {
-    (n - i.rem_euclid(n) - 1) as usize
-}
-
-#[inline(always)]
-pub(crate) fn reflect_index_101(i: isize, n: isize) -> usize {
-    let n_r = n - 1;
-    if n_r == 0 {
-        return 0;
-    }
-    (n_r - i.rem_euclid(n_r)) as usize
-}

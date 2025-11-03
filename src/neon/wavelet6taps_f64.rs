@@ -187,76 +187,81 @@ impl DwtInverseExecutor<f64> for NeonWavelet6TapsF64 {
             let safe_start = FILTER_OFFSET;
             // 2*x - off + len >= output.len()
             // x >= (output.len() + off - len)/2
-            let safe_end = ((output.len() + FILTER_OFFSET).saturating_sub(FILTER_LENGTH)) / 2;
-            for i in 0..safe_start.min(safe_end) {
-                let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
-                let k = 2 * i as isize - FILTER_OFFSET as isize;
-                for j in 0..6 {
-                    let k = k + j as isize;
-                    if k >= 0 && k < rec_len as isize {
-                        *output.get_unchecked_mut(k as usize) = fmla(
-                            self.low_pass[j],
-                            h,
-                            fmla(self.high_pass[j], g, *output.get_unchecked(k as usize)),
-                        );
+            let mut safe_end = ((output.len() + FILTER_OFFSET).saturating_sub(FILTER_LENGTH)) / 2;
+
+            if safe_start < safe_end {
+                for i in 0..safe_start {
+                    let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
+                    let k = 2 * i as isize - FILTER_OFFSET as isize;
+                    for j in 0..6 {
+                        let k = k + j as isize;
+                        if k >= 0 && k < rec_len as isize {
+                            *output.get_unchecked_mut(k as usize) = fmla(
+                                self.low_pass[j],
+                                h,
+                                fmla(self.high_pass[j], g, *output.get_unchecked(k as usize)),
+                            );
+                        }
                     }
                 }
-            }
 
-            let h0 = vld1q_f64(self.low_pass.as_ptr());
-            let g0 = vld1q_f64(self.high_pass.as_ptr());
+                let h0 = vld1q_f64(self.low_pass.as_ptr());
+                let g0 = vld1q_f64(self.high_pass.as_ptr());
 
-            let h1 = vld1q_f64(self.low_pass.get_unchecked(2..).as_ptr());
-            let g1 = vld1q_f64(self.high_pass.get_unchecked(2..).as_ptr());
+                let h1 = vld1q_f64(self.low_pass.get_unchecked(2..).as_ptr());
+                let g1 = vld1q_f64(self.high_pass.get_unchecked(2..).as_ptr());
 
-            let h2 = vld1q_f64(self.low_pass.get_unchecked(4..).as_ptr());
-            let g2 = vld1q_f64(self.high_pass.get_unchecked(4..).as_ptr());
+                let h2 = vld1q_f64(self.low_pass.get_unchecked(4..).as_ptr());
+                let g2 = vld1q_f64(self.high_pass.get_unchecked(4..).as_ptr());
 
-            let mut ui = safe_start;
+                let mut ui = safe_start;
 
-            while ui + 2 < safe_end {
-                let (h, g) = (
-                    vld1q_f64(approx.get_unchecked(ui)),
-                    vld1q_f64(details.get_unchecked(ui)),
-                );
-                let k = 2 * ui as isize - FILTER_OFFSET as isize;
-                let part0 = output.get_unchecked_mut(k as usize..);
-                let q0 = vld1q_f64(part0.as_ptr());
-                let q1 = vld1q_f64(part0.get_unchecked(2..).as_ptr());
-                let q2 = vld1q_f64(part0.get_unchecked(4..).as_ptr());
-                let q3 = vld1q_f64(part0.get_unchecked(6..).as_ptr());
+                while ui + 2 < safe_end {
+                    let (h, g) = (
+                        vld1q_f64(approx.get_unchecked(ui)),
+                        vld1q_f64(details.get_unchecked(ui)),
+                    );
+                    let k = 2 * ui as isize - FILTER_OFFSET as isize;
+                    let part0 = output.get_unchecked_mut(k as usize..);
+                    let q0 = vld1q_f64(part0.as_ptr());
+                    let q1 = vld1q_f64(part0.get_unchecked(2..).as_ptr());
+                    let q2 = vld1q_f64(part0.get_unchecked(4..).as_ptr());
+                    let q3 = vld1q_f64(part0.get_unchecked(6..).as_ptr());
 
-                let w0 = vfmaq_laneq_f64::<0>(vfmaq_laneq_f64::<0>(q0, h0, h), g0, g);
-                let w1 = vfmaq_laneq_f64::<0>(vfmaq_laneq_f64::<0>(q1, h1, h), g1, g);
-                let w2 = vfmaq_laneq_f64::<0>(vfmaq_laneq_f64::<0>(q2, h2, h), g2, g);
+                    let w0 = vfmaq_laneq_f64::<0>(vfmaq_laneq_f64::<0>(q0, h0, h), g0, g);
+                    let w1 = vfmaq_laneq_f64::<0>(vfmaq_laneq_f64::<0>(q1, h1, h), g1, g);
+                    let w2 = vfmaq_laneq_f64::<0>(vfmaq_laneq_f64::<0>(q2, h2, h), g2, g);
 
-                let w3 = vfmaq_laneq_f64::<1>(vfmaq_laneq_f64::<1>(w1, h0, h), g0, g);
-                let w4 = vfmaq_laneq_f64::<1>(vfmaq_laneq_f64::<1>(w2, h1, h), g1, g);
-                let w5 = vfmaq_laneq_f64::<1>(vfmaq_laneq_f64::<1>(q3, h2, h), g2, g);
+                    let w3 = vfmaq_laneq_f64::<1>(vfmaq_laneq_f64::<1>(w1, h0, h), g0, g);
+                    let w4 = vfmaq_laneq_f64::<1>(vfmaq_laneq_f64::<1>(w2, h1, h), g1, g);
+                    let w5 = vfmaq_laneq_f64::<1>(vfmaq_laneq_f64::<1>(q3, h2, h), g2, g);
 
-                vst1q_f64(part0.as_mut_ptr(), w0);
-                vst1q_f64(part0.get_unchecked_mut(2..).as_mut_ptr(), w3);
-                vst1q_f64(part0.get_unchecked_mut(4..).as_mut_ptr(), w4);
-                vst1q_f64(part0.get_unchecked_mut(6..).as_mut_ptr(), w5);
-                ui += 2;
-            }
+                    vst1q_f64(part0.as_mut_ptr(), w0);
+                    vst1q_f64(part0.get_unchecked_mut(2..).as_mut_ptr(), w3);
+                    vst1q_f64(part0.get_unchecked_mut(4..).as_mut_ptr(), w4);
+                    vst1q_f64(part0.get_unchecked_mut(6..).as_mut_ptr(), w5);
+                    ui += 2;
+                }
 
-            for i in ui..safe_end {
-                let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
-                let k = 2 * i as isize - FILTER_OFFSET as isize;
-                let part = output.get_unchecked_mut(k as usize..);
+                for i in ui..safe_end {
+                    let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
+                    let k = 2 * i as isize - FILTER_OFFSET as isize;
+                    let part = output.get_unchecked_mut(k as usize..);
 
-                let w0 = vld1q_f64(part.as_ptr());
-                let w1 = vld1q_f64(part.get_unchecked(2..).as_ptr());
-                let w2 = vld1q_f64(part.get_unchecked(4..).as_ptr());
+                    let w0 = vld1q_f64(part.as_ptr());
+                    let w1 = vld1q_f64(part.get_unchecked(2..).as_ptr());
+                    let w2 = vld1q_f64(part.get_unchecked(4..).as_ptr());
 
-                let q0 = vfmaq_n_f64(vfmaq_n_f64(w0, h0, h), g0, g);
-                let q2 = vfmaq_n_f64(vfmaq_n_f64(w1, h1, h), g1, g);
-                let q4 = vfmaq_n_f64(vfmaq_n_f64(w2, h2, h), g2, g);
+                    let q0 = vfmaq_n_f64(vfmaq_n_f64(w0, h0, h), g0, g);
+                    let q2 = vfmaq_n_f64(vfmaq_n_f64(w1, h1, h), g1, g);
+                    let q4 = vfmaq_n_f64(vfmaq_n_f64(w2, h2, h), g2, g);
 
-                vst1q_f64(part.as_mut_ptr(), q0);
-                vst1q_f64(part.get_unchecked_mut(2..).as_mut_ptr(), q2);
-                vst1q_f64(part.get_unchecked_mut(4..).as_mut_ptr(), q4);
+                    vst1q_f64(part.as_mut_ptr(), q0);
+                    vst1q_f64(part.get_unchecked_mut(2..).as_mut_ptr(), q2);
+                    vst1q_f64(part.get_unchecked_mut(4..).as_mut_ptr(), q4);
+                }
+            } else {
+                safe_end = 0usize;
             }
 
             for i in safe_end..approx.len() {

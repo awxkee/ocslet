@@ -124,9 +124,10 @@ impl DwtForwardExecutor<f32> for NeonWavelet4TapsF32 {
 
             let approx = approx.chunks_exact_mut(4).into_remainder();
             let details = details.chunks_exact_mut(4).into_remainder();
+            let padded_input = padded_input.get_unchecked(processed * 2..);
 
             for (i, (approx, detail)) in approx.iter_mut().zip(details.iter_mut()).enumerate() {
-                let base = 2 * (processed + i);
+                let base = 2 * i;
 
                 let input = padded_input.get_unchecked(base..);
 
@@ -173,59 +174,64 @@ impl DwtInverseExecutor<f32> for NeonWavelet4TapsF32 {
             let safe_start = FILTER_OFFSET;
             // 2*x - off + len >= output.len()
             // x >= (output.len() + off - len)/2
-            let safe_end = ((output.len() + FILTER_OFFSET).saturating_sub(FILTER_LENGTH)) / 2;
-            for i in 0..safe_start.min(safe_end) {
-                let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
-                let k = 2 * i as isize - FILTER_OFFSET as isize;
-                for j in 0..4 {
-                    let k = k + j as isize;
-                    if k >= 0 && k < rec_len as isize {
-                        *output.get_unchecked_mut(k as usize) = fmla(
-                            self.low_pass[j],
-                            h,
-                            fmla(self.high_pass[j], g, *output.get_unchecked(k as usize)),
-                        );
+            let mut safe_end = ((output.len() + FILTER_OFFSET).saturating_sub(FILTER_LENGTH)) / 2;
+
+            if safe_start < safe_end {
+                for i in 0..safe_start.min(safe_end) {
+                    let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
+                    let k = 2 * i as isize - FILTER_OFFSET as isize;
+                    for j in 0..4 {
+                        let k = k + j as isize;
+                        if k >= 0 && k < rec_len as isize {
+                            *output.get_unchecked_mut(k as usize) = fmla(
+                                self.low_pass[j],
+                                h,
+                                fmla(self.high_pass[j], g, *output.get_unchecked(k as usize)),
+                            );
+                        }
                     }
                 }
-            }
 
-            let wh = vld1q_f32(self.low_pass.as_ptr());
-            let wg = vld1q_f32(self.high_pass.as_ptr());
+                let wh = vld1q_f32(self.low_pass.as_ptr());
+                let wg = vld1q_f32(self.high_pass.as_ptr());
 
-            let mut ui = safe_start;
+                let mut ui = safe_start;
 
-            while ui + 4 < safe_end {
-                let (h, g) = (
-                    vld1q_f32(approx.get_unchecked(ui)),
-                    vld1q_f32(details.get_unchecked(ui)),
-                );
-                let k = 2 * ui as isize - FILTER_OFFSET as isize;
-                let part0 = output.get_unchecked_mut(k as usize..);
-                let q0 = vld1q_f32(part0.as_ptr());
-                let q1 = vld1q_f32(part0.get_unchecked(2..).as_ptr());
-                let q2 = vld1q_f32(part0.get_unchecked(4..).as_ptr());
-                let q3 = vld1q_f32(part0.get_unchecked(6..).as_ptr());
-                let w0 = vfmaq_laneq_f32::<0>(vfmaq_laneq_f32::<0>(q0, wh, h), wg, g);
-                let mut w1 = vfmaq_laneq_f32::<1>(vfmaq_laneq_f32::<1>(q1, wh, h), wg, g);
-                w1 = vaddq_f32(w1, vcombine_f32(vget_high_f32(w0), vdup_n_f32(0.)));
-                let mut w2 = vfmaq_laneq_f32::<2>(vfmaq_laneq_f32::<2>(q2, wh, h), wg, g);
-                w2 = vaddq_f32(w2, vcombine_f32(vget_high_f32(w1), vdup_n_f32(0.)));
-                let mut w3 = vfmaq_laneq_f32::<3>(vfmaq_laneq_f32::<3>(q3, wh, h), wg, g);
-                w3 = vaddq_f32(w3, vcombine_f32(vget_high_f32(w2), vdup_n_f32(0.)));
-                vst1q_f32(part0.as_mut_ptr(), w0);
-                vst1q_f32(part0.get_unchecked_mut(2..).as_mut_ptr(), w1);
-                vst1q_f32(part0.get_unchecked_mut(4..).as_mut_ptr(), w2);
-                vst1q_f32(part0.get_unchecked_mut(6..).as_mut_ptr(), w3);
-                ui += 4;
-            }
+                while ui + 4 < safe_end {
+                    let (h, g) = (
+                        vld1q_f32(approx.get_unchecked(ui)),
+                        vld1q_f32(details.get_unchecked(ui)),
+                    );
+                    let k = 2 * ui as isize - FILTER_OFFSET as isize;
+                    let part0 = output.get_unchecked_mut(k as usize..);
+                    let q0 = vld1q_f32(part0.as_ptr());
+                    let q1 = vld1q_f32(part0.get_unchecked(2..).as_ptr());
+                    let q2 = vld1q_f32(part0.get_unchecked(4..).as_ptr());
+                    let q3 = vld1q_f32(part0.get_unchecked(6..).as_ptr());
+                    let w0 = vfmaq_laneq_f32::<0>(vfmaq_laneq_f32::<0>(q0, wh, h), wg, g);
+                    let mut w1 = vfmaq_laneq_f32::<1>(vfmaq_laneq_f32::<1>(q1, wh, h), wg, g);
+                    w1 = vaddq_f32(w1, vcombine_f32(vget_high_f32(w0), vdup_n_f32(0.)));
+                    let mut w2 = vfmaq_laneq_f32::<2>(vfmaq_laneq_f32::<2>(q2, wh, h), wg, g);
+                    w2 = vaddq_f32(w2, vcombine_f32(vget_high_f32(w1), vdup_n_f32(0.)));
+                    let mut w3 = vfmaq_laneq_f32::<3>(vfmaq_laneq_f32::<3>(q3, wh, h), wg, g);
+                    w3 = vaddq_f32(w3, vcombine_f32(vget_high_f32(w2), vdup_n_f32(0.)));
+                    vst1q_f32(part0.as_mut_ptr(), w0);
+                    vst1q_f32(part0.get_unchecked_mut(2..).as_mut_ptr(), w1);
+                    vst1q_f32(part0.get_unchecked_mut(4..).as_mut_ptr(), w2);
+                    vst1q_f32(part0.get_unchecked_mut(6..).as_mut_ptr(), w3);
+                    ui += 4;
+                }
 
-            for i in ui..safe_end {
-                let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
-                let k = 2 * i as isize - FILTER_OFFSET as isize;
-                let part = output.get_unchecked_mut(k as usize..);
-                let q0 = vld1q_f32(part.as_ptr());
-                let w0 = vfmaq_n_f32(vfmaq_n_f32(q0, wh, h), wg, g);
-                vst1q_f32(part.as_mut_ptr(), w0);
+                for i in ui..safe_end {
+                    let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
+                    let k = 2 * i as isize - FILTER_OFFSET as isize;
+                    let part = output.get_unchecked_mut(k as usize..);
+                    let q0 = vld1q_f32(part.as_ptr());
+                    let w0 = vfmaq_n_f32(vfmaq_n_f32(q0, wh, h), wg, g);
+                    vst1q_f32(part.as_mut_ptr(), w0);
+                }
+            } else {
+                safe_end = 0usize;
             }
 
             for i in safe_end..approx.len() {

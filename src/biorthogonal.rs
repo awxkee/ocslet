@@ -406,3 +406,44 @@ where
         self.get_wavelet_impl().iter().map(|x| x.as_()).collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn biorthogonal_test() {
+        let to_test = [
+            BiorthogonalFamily::Biorthogonal1_0,
+            BiorthogonalFamily::Biorthogonal1_1,
+            BiorthogonalFamily::Biorthogonal1_3,
+            BiorthogonalFamily::Biorthogonal1_5,
+            BiorthogonalFamily::Biorthogonal2_0,
+            BiorthogonalFamily::Biorthogonal2_2,
+            BiorthogonalFamily::Biorthogonal2_4,
+            BiorthogonalFamily::Biorthogonal2_6,
+            BiorthogonalFamily::Biorthogonal2_8,
+            BiorthogonalFamily::Biorthogonal3_0,
+            BiorthogonalFamily::Biorthogonal3_1,
+            BiorthogonalFamily::Biorthogonal3_3,
+            BiorthogonalFamily::Biorthogonal3_5,
+            BiorthogonalFamily::Biorthogonal3_7,
+            BiorthogonalFamily::Biorthogonal3_9,
+            BiorthogonalFamily::Biorthogonal4_0,
+            BiorthogonalFamily::Biorthogonal4_4,
+            BiorthogonalFamily::Biorthogonal5_0,
+            BiorthogonalFamily::Biorthogonal5_5,
+            BiorthogonalFamily::Biorthogonal6_0,
+            BiorthogonalFamily::Biorthogonal6_8,
+        ];
+        for b in to_test.iter() {
+            let wv: Vec<f64> = b.get_wavelet();
+            assert!(
+                wv.len().is_multiple_of(2),
+                "Assertion failed for biorthogonal {:?} with size {}",
+                b,
+                wv.len()
+            );
+        }
+    }
+}

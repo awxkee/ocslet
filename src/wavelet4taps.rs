@@ -154,46 +154,51 @@ where
             let safe_start = FILTER_OFFSET;
             // 2*x - off + len >= output.len()
             // x >= (output.len() + off - len)/2
-            let safe_end = ((output.len() + FILTER_OFFSET).saturating_sub(FILTER_LENGTH)) / 2;
-            for i in 0..safe_start.min(safe_end) {
-                let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
-                let k = 2 * i as isize - FILTER_OFFSET as isize;
-                for j in 0..4 {
-                    let k = k + j as isize;
-                    if k >= 0 && k < rec_len as isize {
-                        *output.get_unchecked_mut(k as usize) = fmla(
-                            self.low_pass[j],
-                            h,
-                            fmla(self.high_pass[j], g, *output.get_unchecked(k as usize)),
-                        );
+            let mut safe_end = ((output.len() + FILTER_OFFSET).saturating_sub(FILTER_LENGTH)) / 2;
+
+            if safe_start < safe_end {
+                for i in 0..safe_start {
+                    let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
+                    let k = 2 * i as isize - FILTER_OFFSET as isize;
+                    for j in 0..4 {
+                        let k = k + j as isize;
+                        if k >= 0 && k < rec_len as isize {
+                            *output.get_unchecked_mut(k as usize) = fmla(
+                                self.low_pass[j],
+                                h,
+                                fmla(self.high_pass[j], g, *output.get_unchecked(k as usize)),
+                            );
+                        }
                     }
                 }
-            }
 
-            for i in safe_start..safe_end {
-                let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
-                let k = 2 * i as isize - FILTER_OFFSET as isize;
-                let part = output.get_unchecked_mut(k as usize..);
-                *part.get_unchecked_mut(0) = fmla(
-                    self.low_pass[0],
-                    h,
-                    fmla(self.high_pass[0], g, *part.get_unchecked(0)),
-                );
-                *part.get_unchecked_mut(1) = fmla(
-                    self.low_pass[1],
-                    h,
-                    fmla(self.high_pass[1], g, *part.get_unchecked(1)),
-                );
-                *part.get_unchecked_mut(2) = fmla(
-                    self.low_pass[2],
-                    h,
-                    fmla(self.high_pass[2], g, *part.get_unchecked(2)),
-                );
-                *part.get_unchecked_mut(3) = fmla(
-                    self.low_pass[3],
-                    h,
-                    fmla(self.high_pass[3], g, *part.get_unchecked(3)),
-                );
+                for i in safe_start..safe_end {
+                    let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
+                    let k = 2 * i as isize - FILTER_OFFSET as isize;
+                    let part = output.get_unchecked_mut(k as usize..);
+                    *part.get_unchecked_mut(0) = fmla(
+                        self.low_pass[0],
+                        h,
+                        fmla(self.high_pass[0], g, *part.get_unchecked(0)),
+                    );
+                    *part.get_unchecked_mut(1) = fmla(
+                        self.low_pass[1],
+                        h,
+                        fmla(self.high_pass[1], g, *part.get_unchecked(1)),
+                    );
+                    *part.get_unchecked_mut(2) = fmla(
+                        self.low_pass[2],
+                        h,
+                        fmla(self.high_pass[2], g, *part.get_unchecked(2)),
+                    );
+                    *part.get_unchecked_mut(3) = fmla(
+                        self.low_pass[3],
+                        h,
+                        fmla(self.high_pass[3], g, *part.get_unchecked(3)),
+                    );
+                }
+            } else {
+                safe_end = 0usize;
             }
 
             for i in safe_end..approx.len() {

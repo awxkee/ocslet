@@ -217,79 +217,84 @@ impl AvxWavelet4TapsF64 {
             let safe_start = FILTER_OFFSET;
             // 2*x - off + len >= output.len()
             // x >= (output.len() + off - len)/2
-            let safe_end = ((output.len() + FILTER_OFFSET).saturating_sub(FILTER_LENGTH)) / 2;
-            for i in 0..safe_start.min(safe_end) {
-                let (h, g) = (
-                    _mm_set1_pd(*approx.get_unchecked(i)),
-                    _mm_set1_pd(*details.get_unchecked(i)),
-                );
-                let k = 2 * i as isize - FILTER_OFFSET as isize;
-                for j in 0..4 {
-                    let k = k + j as isize;
-                    if k >= 0 && k < rec_len as isize {
-                        let mut w = _mm_fmadd_sd(
-                            _mm_set1_pd(self.high_pass[j]),
-                            g,
-                            _mm_load_sd(output.get_unchecked(k as usize) as *const f64),
-                        );
-                        w = _mm_fmadd_sd(_mm_set1_pd(self.low_pass[j]), h, w);
-                        _mm_store_sd(output.get_unchecked_mut(k as usize) as *mut f64, w);
+            let mut safe_end = ((output.len() + FILTER_OFFSET).saturating_sub(FILTER_LENGTH)) / 2;
+
+            if safe_start < safe_end {
+                for i in 0..safe_start.min(safe_end) {
+                    let (h, g) = (
+                        _mm_set1_pd(*approx.get_unchecked(i)),
+                        _mm_set1_pd(*details.get_unchecked(i)),
+                    );
+                    let k = 2 * i as isize - FILTER_OFFSET as isize;
+                    for j in 0..4 {
+                        let k = k + j as isize;
+                        if k >= 0 && k < rec_len as isize {
+                            let mut w = _mm_fmadd_sd(
+                                _mm_set1_pd(self.high_pass[j]),
+                                g,
+                                _mm_load_sd(output.get_unchecked(k as usize) as *const f64),
+                            );
+                            w = _mm_fmadd_sd(_mm_set1_pd(self.low_pass[j]), h, w);
+                            _mm_store_sd(output.get_unchecked_mut(k as usize) as *mut f64, w);
+                        }
                     }
                 }
-            }
 
-            let h0 = _mm256_loadu_pd(self.low_pass.as_ptr());
-            let g0 = _mm256_loadu_pd(self.high_pass.as_ptr());
+                let h0 = _mm256_loadu_pd(self.low_pass.as_ptr());
+                let g0 = _mm256_loadu_pd(self.high_pass.as_ptr());
 
-            let mut ui = safe_start;
+                let mut ui = safe_start;
 
-            while ui + 2 < safe_end {
-                let (h, g) = (
-                    _mm_loadu_pd(approx.get_unchecked(ui..).as_ptr()),
-                    _mm_loadu_pd(details.get_unchecked(ui..).as_ptr()),
-                );
+                while ui + 2 < safe_end {
+                    let (h, g) = (
+                        _mm_loadu_pd(approx.get_unchecked(ui..).as_ptr()),
+                        _mm_loadu_pd(details.get_unchecked(ui..).as_ptr()),
+                    );
 
-                let k = 2 * ui as isize - FILTER_OFFSET as isize;
-                let part = output.get_unchecked_mut(k as usize..);
+                    let k = 2 * ui as isize - FILTER_OFFSET as isize;
+                    let part = output.get_unchecked_mut(k as usize..);
 
-                let w0 = _mm256_loadu_pd(part.as_ptr());
-                let w1 = _mm256_loadu_pd(part.get_unchecked(2..).as_ptr());
+                    let w0 = _mm256_loadu_pd(part.as_ptr());
+                    let w1 = _mm256_loadu_pd(part.get_unchecked(2..).as_ptr());
 
-                let wh0 =
-                    _mm256_permute4x64_pd::<{ shuffle(0, 0, 0, 0) }>(_mm256_castpd128_pd256(h));
-                let wg0 =
-                    _mm256_permute4x64_pd::<{ shuffle(0, 0, 0, 0) }>(_mm256_castpd128_pd256(g));
-                let wh1 =
-                    _mm256_permute4x64_pd::<{ shuffle(1, 1, 1, 1) }>(_mm256_castpd128_pd256(h));
-                let wg1 =
-                    _mm256_permute4x64_pd::<{ shuffle(1, 1, 1, 1) }>(_mm256_castpd128_pd256(g));
+                    let wh0 =
+                        _mm256_permute4x64_pd::<{ shuffle(0, 0, 0, 0) }>(_mm256_castpd128_pd256(h));
+                    let wg0 =
+                        _mm256_permute4x64_pd::<{ shuffle(0, 0, 0, 0) }>(_mm256_castpd128_pd256(g));
+                    let wh1 =
+                        _mm256_permute4x64_pd::<{ shuffle(1, 1, 1, 1) }>(_mm256_castpd128_pd256(h));
+                    let wg1 =
+                        _mm256_permute4x64_pd::<{ shuffle(1, 1, 1, 1) }>(_mm256_castpd128_pd256(g));
 
-                let q0 = _mm256_fmadd_pd(g0, wg0, _mm256_fmadd_pd(h0, wh0, w0));
+                    let q0 = _mm256_fmadd_pd(g0, wg0, _mm256_fmadd_pd(h0, wh0, w0));
 
-                const HI_HI: i32 = 0b0011_0001;
-                let qq = _mm256_permute2f128_pd::<HI_HI>(q0, w1);
+                    const HI_HI: i32 = 0b0011_0001;
+                    let qq = _mm256_permute2f128_pd::<HI_HI>(q0, w1);
 
-                let q2 = _mm256_fmadd_pd(g0, wg1, _mm256_fmadd_pd(h0, wh1, qq));
+                    let q2 = _mm256_fmadd_pd(g0, wg1, _mm256_fmadd_pd(h0, wh1, qq));
 
-                _mm_store_pd(part.as_mut_ptr(), _mm256_castpd256_pd128(q0));
-                _mm256_storeu_pd(part.get_unchecked_mut(2..).as_mut_ptr(), q2);
-                ui += 2;
-            }
+                    _mm_store_pd(part.as_mut_ptr(), _mm256_castpd256_pd128(q0));
+                    _mm256_storeu_pd(part.get_unchecked_mut(2..).as_mut_ptr(), q2);
+                    ui += 2;
+                }
 
-            for i in ui..safe_end {
-                let (h, g) = (
-                    _mm256_set1_pd(*approx.get_unchecked(i)),
-                    _mm256_set1_pd(*details.get_unchecked(i)),
-                );
+                for i in ui..safe_end {
+                    let (h, g) = (
+                        _mm256_set1_pd(*approx.get_unchecked(i)),
+                        _mm256_set1_pd(*details.get_unchecked(i)),
+                    );
 
-                let k = 2 * i as isize - FILTER_OFFSET as isize;
-                let part = output.get_unchecked_mut(k as usize..);
+                    let k = 2 * i as isize - FILTER_OFFSET as isize;
+                    let part = output.get_unchecked_mut(k as usize..);
 
-                let w0 = _mm256_loadu_pd(part.as_ptr());
+                    let w0 = _mm256_loadu_pd(part.as_ptr());
 
-                let q0 = _mm256_fmadd_pd(g0, g, _mm256_fmadd_pd(h0, h, w0));
+                    let q0 = _mm256_fmadd_pd(g0, g, _mm256_fmadd_pd(h0, h, w0));
 
-                _mm256_storeu_pd(part.as_mut_ptr(), q0);
+                    _mm256_storeu_pd(part.as_mut_ptr(), q0);
+                }
+            } else {
+                safe_end = 0usize;
             }
 
             for i in safe_end..approx.len() {

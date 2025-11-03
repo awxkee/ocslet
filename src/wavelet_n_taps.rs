@@ -146,31 +146,39 @@ where
             let safe_start = filter_offset;
             // 2*x - off + len >= output.len()
             // x >= (output.len() + off - len)/2
-            let safe_end = ((output.len() + filter_offset).saturating_sub(self.filter_length)) / 2;
-            for i in 0..safe_start.min(safe_end) {
-                let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
-                let k = 2 * i as isize - filter_offset as isize;
-                for (j, (&wg, &wh)) in self.high_pass.iter().zip(self.low_pass.iter()).enumerate() {
-                    let k = k + j as isize;
-                    if k >= 0 && k < rec_len as isize {
-                        *output.get_unchecked_mut(k as usize) =
-                            fmla(wh, h, fmla(wg, g, *output.get_unchecked(k as usize)));
+            let mut safe_end =
+                ((output.len() + filter_offset).saturating_sub(self.filter_length)) / 2;
+
+            if safe_start < safe_end {
+                for i in 0..safe_start.min(safe_end) {
+                    let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
+                    let k = 2 * i as isize - filter_offset as isize;
+                    for (j, (&wg, &wh)) in
+                        self.high_pass.iter().zip(self.low_pass.iter()).enumerate()
+                    {
+                        let k = k + j as isize;
+                        if k >= 0 && k < rec_len as isize {
+                            *output.get_unchecked_mut(k as usize) =
+                                fmla(wh, h, fmla(wg, g, *output.get_unchecked(k as usize)));
+                        }
                     }
                 }
-            }
 
-            for i in safe_start..safe_end {
-                let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
-                let k = 2 * i as isize - filter_offset as isize;
-                let part = output.get_unchecked_mut(k as usize..);
-                for ((&wg, &wh), dst) in self
-                    .high_pass
-                    .iter()
-                    .zip(self.low_pass.iter())
-                    .zip(part.iter_mut())
-                {
-                    *dst = fmla(wh, h, fmla(wg, g, *dst));
+                for i in safe_start..safe_end {
+                    let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
+                    let k = 2 * i as isize - filter_offset as isize;
+                    let part = output.get_unchecked_mut(k as usize..);
+                    for ((&wg, &wh), dst) in self
+                        .high_pass
+                        .iter()
+                        .zip(self.low_pass.iter())
+                        .zip(part.iter_mut())
+                    {
+                        *dst = fmla(wh, h, fmla(wg, g, *dst));
+                    }
                 }
+            } else {
+                safe_end = 0usize;
             }
 
             for i in safe_end..approx.len() {

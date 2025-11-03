@@ -775,3 +775,47 @@ where
         self.get_wavelet_impl().iter().map(|x| x.as_()).collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_daubechies() {
+        let to_test = [
+            DaubechiesFamily::Db1,
+            DaubechiesFamily::Db2,
+            DaubechiesFamily::Db3,
+            DaubechiesFamily::Db4,
+            DaubechiesFamily::Db5,
+            DaubechiesFamily::Db6,
+            DaubechiesFamily::Db7,
+            DaubechiesFamily::Db8,
+            DaubechiesFamily::Db9,
+            DaubechiesFamily::Db10,
+            DaubechiesFamily::Db11,
+            DaubechiesFamily::Db12,
+            DaubechiesFamily::Db13,
+            DaubechiesFamily::Db14,
+            DaubechiesFamily::Db15,
+            DaubechiesFamily::Db16,
+            DaubechiesFamily::Db17,
+            DaubechiesFamily::Db18,
+            DaubechiesFamily::Db19,
+            DaubechiesFamily::Db20,
+            DaubechiesFamily::Db21,
+            DaubechiesFamily::Db22,
+            DaubechiesFamily::Db23,
+            DaubechiesFamily::Db24,
+        ];
+        for b in to_test.iter() {
+            let wv: Vec<f64> = b.get_wavelet();
+            assert!(
+                wv.len().is_multiple_of(2),
+                "Assertion failed for daubechies {:?} with size {}",
+                b,
+                wv.len()
+            );
+        }
+    }
+}

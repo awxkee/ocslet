@@ -47,6 +47,7 @@ mod convolve1d;
 mod daubechies;
 mod err;
 mod factory;
+mod fast_divide;
 mod filter_padding;
 mod mla;
 mod modwt;
@@ -54,6 +55,7 @@ mod modwt;
 mod neon;
 mod symlets;
 mod util;
+mod wavelet10taps;
 mod wavelet2taps;
 mod wavelet4taps;
 mod wavelet6taps;
@@ -210,6 +212,7 @@ impl Osclet {
             4 => T::wavelet_4_taps(border_mode, filter.as_slice().try_into().unwrap()),
             6 => T::wavelet_6_taps(border_mode, filter.as_slice().try_into().unwrap()),
             8 => T::wavelet_8_taps(border_mode, filter.as_slice().try_into().unwrap()),
+            10 => T::wavelet_10_taps(border_mode, filter.as_slice().try_into().unwrap()),
             _ => T::wavelet_n_taps(border_mode, filter.as_slice()),
         }
     }

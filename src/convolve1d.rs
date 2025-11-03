@@ -55,6 +55,14 @@ impl ConvolveFactory<f32> for f32 {
             use crate::neon::NeonConvolution1dF32;
             Box::new(NeonConvolution1dF32 { border_mode })
         }
+        #[cfg(all(target_arch = "x86_64", feature = "avx"))]
+        {
+            use crate::factory::has_valid_avx;
+            if has_valid_avx() {
+                use crate::avx::AvxConvolution1dF32;
+                return Box::new(AvxConvolution1dF32 { border_mode });
+            }
+        }
         #[cfg(not(all(target_arch = "aarch64", feature = "neon")))]
         {
             Box::new(ScalarConvolution1d {
@@ -71,6 +79,14 @@ impl ConvolveFactory<f64> for f64 {
         {
             use crate::neon::NeonConvolution1dF64;
             Box::new(NeonConvolution1dF64 { border_mode })
+        }
+        #[cfg(all(target_arch = "x86_64", feature = "avx"))]
+        {
+            use crate::factory::has_valid_avx;
+            if has_valid_avx() {
+                use crate::avx::AvxConvolution1dF64;
+                return Box::new(AvxConvolution1dF64 { border_mode });
+            }
         }
         #[cfg(not(all(target_arch = "aarch64", feature = "neon")))]
         {

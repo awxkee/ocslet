@@ -207,3 +207,32 @@ where
         self.get_wavelet_impl().iter().map(|x| x.as_()).collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn symlet_test() {
+        let to_test = [
+            SymletFamily::Sym2,
+            SymletFamily::Sym3,
+            SymletFamily::Sym4,
+            SymletFamily::Sym5,
+            SymletFamily::Sym6,
+            SymletFamily::Sym7,
+            SymletFamily::Sym8,
+            SymletFamily::Sym9,
+            SymletFamily::Sym10,
+        ];
+        for b in to_test.iter() {
+            let wv: Vec<f64> = b.get_wavelet();
+            assert!(
+                wv.len().is_multiple_of(2),
+                "Assertion failed for symlet {:?} with size {}",
+                b,
+                wv.len()
+            );
+        }
+    }
+}

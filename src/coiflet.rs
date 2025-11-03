@@ -213,3 +213,29 @@ where
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_coiflets() {
+        let to_test = [
+            CoifletFamily::Coif1,
+            CoifletFamily::Coif2,
+            CoifletFamily::Coif3,
+            CoifletFamily::Coif4,
+            CoifletFamily::Coif5,
+            CoifletFamily::Coif6,
+        ];
+        for b in to_test.iter() {
+            let wv: Vec<f64> = b.get_wavelet();
+            assert!(
+                wv.len().is_multiple_of(2),
+                "Assertion failed for coiflet {:?} with size {}",
+                b,
+                wv.len()
+            );
+        }
+    }
+}
