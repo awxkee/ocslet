@@ -250,10 +250,10 @@ where
         // Inverse predict 2: odd -= gamma * (even_left + even_right)
         dwt97_forward_update_odd(&mut approx_inv, &mut detail_inv, (-GAMMA).as_());
 
-        // Inverse update 1: even -= beta * (odd_left + odd_right) >> 14
+        // Inverse update 1: even -= beta * (odd_left + odd_right)
         dwt97_forward_update_even(&mut approx_inv, &mut detail_inv, (-BETA).as_());
 
-        // Inverse predict 1: odd -= alpha * (even_left + even_right) >> 14
+        // Inverse predict 1: odd -= alpha * (even_left + even_right)
         dwt97_forward_update_odd(&mut approx_inv, &mut detail_inv, (-ALPHA).as_());
 
         // Interleave approx and detail to reconstruct signal

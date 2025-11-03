@@ -62,7 +62,6 @@ mod wavelet6taps;
 mod wavelet8taps;
 mod wavelet_n_taps;
 
-use crate::avx::AvxCdf97F32;
 use crate::cdf53f::Cdf53;
 use crate::cdf53i::Cdf53Integer;
 use crate::cdf97f::Cdf97;
