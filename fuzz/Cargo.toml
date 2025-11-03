@@ -13,6 +13,12 @@ arbitrary = { version = "1.4.2", features = ["derive"] }
 
 [dependencies.osclet]
 path = ".."
+default-features = false
+
+[features]
+default = []
+neon = ["osclet/neon"]
+avx = ["osclet/avx"]
 
 [[bin]]
 name = "single_prec_wave"

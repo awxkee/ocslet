@@ -77,7 +77,6 @@ fn mulhi_isize(x: isize, y: isize) -> isize {
 // }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(target_pointer_width = "64")]
 pub struct DividerIsize {
     magic: isize,
     more: u8,
@@ -87,7 +86,7 @@ pub struct DividerIsize {
 
 #[cfg(target_pointer_width = "64")]
 impl DividerIsize {
-    pub fn new(divisor: isize) -> Self {
+    pub(crate) fn new(divisor: isize) -> Self {
         let ud: u64 = divisor as u64;
         let ud: u64 = if divisor < 0 {
             divisor.wrapping_neg() as u64
