@@ -100,8 +100,8 @@ impl AvxWavelet6TapsF32 {
             let mut processed = 0usize;
 
             for (i, (approx, detail)) in approx
-                .chunks_exact_mut(4)
-                .zip(details.chunks_exact_mut(4))
+                .chunks_exact_mut(2)
+                .zip(details.chunks_exact_mut(2))
                 .enumerate()
             {
                 let base0 = 2 * 4 * i;
@@ -129,11 +129,11 @@ impl AvxWavelet6TapsF32 {
                 _mm_storeu_ps(approx.as_mut_ptr(), wa2);
                 _mm_storeu_ps(detail.as_mut_ptr(), wd2);
 
-                processed += 4;
+                processed += 2;
             }
 
-            let approx = approx.chunks_exact_mut(4).into_remainder();
-            let details = details.chunks_exact_mut(4).into_remainder();
+            let approx = approx.chunks_exact_mut(2).into_remainder();
+            let details = details.chunks_exact_mut(2).into_remainder();
             let padded_input = padded_input.get_unchecked(processed * 2..);
 
             for (i, (approx, detail)) in approx.iter_mut().zip(details.iter_mut()).enumerate() {
