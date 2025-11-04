@@ -567,7 +567,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db1
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -650,7 +650,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db1
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -717,7 +717,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db1
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -799,7 +799,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db1
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -867,7 +867,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db1
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );

@@ -27,8 +27,10 @@
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #![allow(clippy::approx_constant)]
+
 use crate::WaveletFilterProvider;
 use num_traits::AsPrimitive;
+use std::borrow::Cow;
 
 /// Represents the family of **biorthogonal wavelets** used in discrete wavelet transforms (DWT).
 ///
@@ -402,8 +404,8 @@ impl<T: Copy + 'static> WaveletFilterProvider<T> for BiorthogonalFamily
 where
     f64: AsPrimitive<T>,
 {
-    fn get_wavelet(&self) -> Vec<T> {
-        self.get_wavelet_impl().iter().map(|x| x.as_()).collect()
+    fn get_wavelet(&self) -> Cow<'_, [T]> {
+        Cow::Owned(self.get_wavelet_impl().iter().map(|x| x.as_()).collect())
     }
 }
 
@@ -437,7 +439,7 @@ mod tests {
             BiorthogonalFamily::Biorthogonal6_8,
         ];
         for b in to_test.iter() {
-            let wv: Vec<f64> = b.get_wavelet();
+            let wv: Cow<[f64]> = b.get_wavelet();
             assert!(
                 wv.len().is_multiple_of(2),
                 "Assertion failed for biorthogonal {:?} with size {}",

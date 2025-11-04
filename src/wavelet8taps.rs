@@ -28,7 +28,7 @@
  */
 use crate::border_mode::BorderMode;
 use crate::err::OscletError;
-use crate::filter_padding::make_arena_1d;
+use crate::filter_padding::{MakeArenaFactoryProvider, make_arena_1d};
 use crate::mla::fmla;
 use crate::util::{dwt_length, idwt_length, low_pass_to_high_from_arr};
 use crate::{DwtForwardExecutor, DwtInverseExecutor, IncompleteDwtExecutor};
@@ -59,8 +59,15 @@ where
     }
 }
 
-impl<T: Copy + 'static + MulAdd<T, Output = T> + Add<T, Output = T> + Mul<T, Output = T> + Default>
-    DwtForwardExecutor<T> for Wavelet8Taps<T>
+impl<
+    T: Copy
+        + 'static
+        + MulAdd<T, Output = T>
+        + Add<T, Output = T>
+        + Mul<T, Output = T>
+        + Default
+        + MakeArenaFactoryProvider<T>,
+> DwtForwardExecutor<T> for Wavelet8Taps<T>
 where
     f64: AsPrimitive<T>,
 {
@@ -265,7 +272,8 @@ impl<
         + Mul<T, Output = T>
         + Default
         + Send
-        + Sync,
+        + Sync
+        + MakeArenaFactoryProvider<T>,
 > IncompleteDwtExecutor<T> for Wavelet8Taps<T>
 where
     f64: AsPrimitive<T>,
@@ -289,7 +297,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db4
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -357,7 +365,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db4
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -426,7 +434,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db4
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );

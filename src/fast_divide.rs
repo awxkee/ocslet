@@ -95,7 +95,6 @@ impl DividerIsize {
         };
         let floor_log_2_d = 63 - ud.leading_zeros();
         if (ud & (ud - 1)) == 0 {
-            // Branchfree and non-branchfree cases are the same
             return DividerIsize {
                 magic: 0,
                 more: floor_log_2_d as u8,
@@ -152,7 +151,6 @@ impl DividerIsize {
         };
         let floor_log_2_d = 31 - ud.leading_zeros();
         if (ud & (ud - 1)) == 0 {
-            // Branchfree and non-branchfree cases are the same
             return DividerIsize {
                 magic: 0,
                 more: floor_log_2_d as u8,

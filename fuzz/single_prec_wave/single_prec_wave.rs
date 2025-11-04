@@ -3,6 +3,7 @@
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
 use osclet::{BorderMode, Osclet, WaveletFilterProvider};
+use std::borrow::Cow;
 
 #[derive(Arbitrary, Debug)]
 struct Data {
@@ -15,8 +16,8 @@ struct WaveletProvider {
 }
 
 impl WaveletFilterProvider<f32> for WaveletProvider {
-    fn get_wavelet(&self) -> Vec<f32> {
-        self.wavelet.to_vec()
+    fn get_wavelet(&self) -> Cow<'_, [f32]> {
+        Cow::Borrowed(self.wavelet.as_slice())
     }
 }
 

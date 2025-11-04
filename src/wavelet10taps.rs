@@ -28,7 +28,7 @@
  */
 use crate::border_mode::BorderMode;
 use crate::err::OscletError;
-use crate::filter_padding::make_arena_1d;
+use crate::filter_padding::{MakeArenaFactoryProvider, make_arena_1d};
 use crate::mla::fmla;
 use crate::util::{dwt_length, idwt_length, low_pass_to_high_from_arr};
 use crate::{DwtForwardExecutor, DwtInverseExecutor, IncompleteDwtExecutor};
@@ -59,8 +59,15 @@ where
     }
 }
 
-impl<T: Copy + 'static + MulAdd<T, Output = T> + Add<T, Output = T> + Mul<T, Output = T> + Default>
-    DwtForwardExecutor<T> for Wavelet10Taps<T>
+impl<
+    T: Copy
+        + 'static
+        + MulAdd<T, Output = T>
+        + Add<T, Output = T>
+        + Mul<T, Output = T>
+        + Default
+        + MakeArenaFactoryProvider<T>,
+> DwtForwardExecutor<T> for Wavelet10Taps<T>
 where
     f64: AsPrimitive<T>,
 {
@@ -72,7 +79,7 @@ where
     ) -> Result<(), OscletError> {
         let half = dwt_length(input.len(), 10);
 
-        if input.len() < 8 {
+        if input.len() < 10 {
             return Err(OscletError::MinFilterSize(input.len(), 10));
         }
 
@@ -283,7 +290,8 @@ impl<
         + Mul<T, Output = T>
         + Default
         + Send
-        + Sync,
+        + Sync
+        + MakeArenaFactoryProvider<T>,
 > IncompleteDwtExecutor<T> for Wavelet10Taps<T>
 where
     f64: AsPrimitive<T>,
@@ -307,7 +315,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db5
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -376,7 +384,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db5
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -436,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn test_db8_even_big() {
+    fn test_db5_even_big() {
         let data_length = 86;
         let mut input = vec![0.; data_length];
         for i in 0..data_length {
@@ -446,7 +454,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db5
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );

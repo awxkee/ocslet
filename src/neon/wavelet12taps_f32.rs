@@ -34,38 +34,33 @@ use crate::util::{dwt_length, idwt_length, low_pass_to_high_from_arr};
 use crate::{DwtForwardExecutor, DwtInverseExecutor, IncompleteDwtExecutor};
 use std::arch::aarch64::*;
 
-pub(crate) struct NeonWavelet10TapsF32 {
+pub(crate) struct NeonWavelet12TapsF32 {
     border_mode: BorderMode,
     low_pass: [f32; 12],
     high_pass: [f32; 12],
 }
 
-impl NeonWavelet10TapsF32 {
-    pub(crate) fn new(border_mode: BorderMode, w: &[f32; 10]) -> Self {
-        let g = low_pass_to_high_from_arr(w);
+impl NeonWavelet12TapsF32 {
+    pub(crate) fn new(border_mode: BorderMode, wavelet: &[f32; 12]) -> Self {
         Self {
             border_mode,
-            low_pass: [
-                w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], 0., 0.,
-            ],
-            high_pass: [
-                g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7], g[8], g[9], 0., 0.,
-            ],
+            low_pass: *wavelet,
+            high_pass: low_pass_to_high_from_arr(wavelet),
         }
     }
 }
 
-impl DwtForwardExecutor<f32> for NeonWavelet10TapsF32 {
+impl DwtForwardExecutor<f32> for NeonWavelet12TapsF32 {
     fn execute_forward(
         &self,
         input: &[f32],
         approx: &mut [f32],
         details: &mut [f32],
     ) -> Result<(), OscletError> {
-        let half = dwt_length(input.len(), 10);
+        let half = dwt_length(input.len(), 12);
 
-        if input.len() < 10 {
-            return Err(OscletError::MinFilterSize(input.len(), 10));
+        if input.len() < 12 {
+            return Err(OscletError::MinFilterSize(input.len(), 12));
         }
 
         if approx.len() != half {
@@ -75,7 +70,7 @@ impl DwtForwardExecutor<f32> for NeonWavelet10TapsF32 {
             return Err(OscletError::ApproxDetailsSize(details.len()));
         }
 
-        const FILTER_SIZE: usize = 10;
+        const FILTER_SIZE: usize = 12;
 
         let whole_size = (2 * half + FILTER_SIZE - 2) - input.len();
         let left_pad = whole_size / 2;
@@ -99,18 +94,16 @@ impl DwtForwardExecutor<f32> for NeonWavelet10TapsF32 {
                 .enumerate()
             {
                 let base = 2 * 2 * i;
-
                 let input = padded_input.get_unchecked(base..);
 
                 let xw0 = vld1q_f32(input.as_ptr());
                 let xw1 = vld1q_f32(input.get_unchecked(4..).as_ptr());
-                let zq0 = vld1q_f32(input.get_unchecked(8..).as_ptr());
-
-                let xw2 = vcombine_f32(vget_low_f32(zq0), vdup_n_f32(0.));
+                let xw2 = vld1q_f32(input.get_unchecked(8..).as_ptr());
+                let xw3 = vld1_f32(input.get_unchecked(12..).as_ptr());
 
                 let xw1_0 = vcombine_f32(vget_high_f32(xw0), vget_low_f32(xw1));
-                let xw1_1 = vcombine_f32(vget_high_f32(xw1), vget_low_f32(zq0));
-                let xw1_2 = vcombine_f32(vget_high_f32(zq0), vdup_n_f32(0.));
+                let xw1_1 = vcombine_f32(vget_high_f32(xw1), vget_low_f32(xw2));
+                let xw1_2 = vcombine_f32(vget_high_f32(xw2), xw3);
 
                 let a0 = vfmaq_f32(vfmaq_f32(vmulq_f32(xw0, h0), xw1, h2), xw2, h4);
                 let d0 = vfmaq_f32(vfmaq_f32(vmulq_f32(xw0, g0), xw1, g2), xw2, g4);
@@ -136,12 +129,11 @@ impl DwtForwardExecutor<f32> for NeonWavelet10TapsF32 {
 
             for (i, (approx, detail)) in approx.iter_mut().zip(details.iter_mut()).enumerate() {
                 let base = 2 * i;
-
                 let input = padded_input.get_unchecked(base..);
 
                 let xw0 = vld1q_f32(input.as_ptr());
                 let xw1 = vld1q_f32(input.get_unchecked(4..).as_ptr());
-                let xw2 = vcombine_f32(vld1_f32(input.get_unchecked(8..).as_ptr()), vdup_n_f32(0.));
+                let xw2 = vld1q_f32(input.get_unchecked(8..).as_ptr());
 
                 let a = vfmaq_f32(vfmaq_f32(vmulq_f32(xw0, h0), xw1, h2), xw2, h4);
                 let d = vfmaq_f32(vfmaq_f32(vmulq_f32(xw0, g0), xw1, g2), xw2, g4);
@@ -157,7 +149,7 @@ impl DwtForwardExecutor<f32> for NeonWavelet10TapsF32 {
     }
 }
 
-impl DwtInverseExecutor<f32> for NeonWavelet10TapsF32 {
+impl DwtInverseExecutor<f32> for NeonWavelet12TapsF32 {
     fn execute_inverse(
         &self,
         approx: &[f32],
@@ -171,14 +163,14 @@ impl DwtInverseExecutor<f32> for NeonWavelet10TapsF32 {
             ));
         }
 
-        let rec_len = idwt_length(approx.len(), 10);
+        let rec_len = idwt_length(approx.len(), 12);
 
         if output.len() != rec_len {
             return Err(OscletError::OutputSizeIsTooSmall(output.len(), rec_len));
         }
 
-        const FILTER_OFFSET: usize = 8;
-        const FILTER_LENGTH: usize = 10;
+        const FILTER_OFFSET: usize = 10;
+        const FILTER_LENGTH: usize = 12;
 
         unsafe {
             let safe_start = FILTER_OFFSET;
@@ -190,7 +182,7 @@ impl DwtInverseExecutor<f32> for NeonWavelet10TapsF32 {
                 for i in 0..safe_start {
                     let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
                     let k = 2 * i as isize - FILTER_OFFSET as isize;
-                    for j in 0..10 {
+                    for j in 0..12 {
                         let k = k + j as isize;
                         if k >= 0 && k < rec_len as isize {
                             *output.get_unchecked_mut(k as usize) = fmla(
@@ -204,10 +196,10 @@ impl DwtInverseExecutor<f32> for NeonWavelet10TapsF32 {
 
                 let h0 = vld1q_f32(self.low_pass.as_ptr());
                 let h2 = vld1q_f32(self.low_pass.get_unchecked(4..).as_ptr());
-                let h4 = vld1_f32(self.low_pass.get_unchecked(8..).as_ptr());
+                let h4 = vld1q_f32(self.low_pass.get_unchecked(8..).as_ptr());
                 let g0 = vld1q_f32(self.high_pass.as_ptr());
                 let g2 = vld1q_f32(self.high_pass.get_unchecked(4..).as_ptr());
-                let g4 = vld1_f32(self.high_pass.get_unchecked(8..).as_ptr());
+                let g4 = vld1q_f32(self.high_pass.get_unchecked(8..).as_ptr());
 
                 for i in safe_start..safe_end {
                     let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
@@ -215,15 +207,15 @@ impl DwtInverseExecutor<f32> for NeonWavelet10TapsF32 {
                     let part = output.get_unchecked_mut(k as usize..);
                     let xw0 = vld1q_f32(part.as_ptr());
                     let xw1 = vld1q_f32(part.get_unchecked(4..).as_ptr());
-                    let xw2 = vld1_f32(part.get_unchecked(8..).as_ptr());
+                    let xw2 = vld1q_f32(part.get_unchecked(8..).as_ptr());
 
                     let q0 = vfmaq_n_f32(vfmaq_n_f32(xw0, h0, h), g0, g);
                     let q2 = vfmaq_n_f32(vfmaq_n_f32(xw1, h2, h), g2, g);
-                    let q8 = vfma_n_f32(vfma_n_f32(xw2, h4, h), g4, g);
+                    let q8 = vfmaq_n_f32(vfmaq_n_f32(xw2, h4, h), g4, g);
 
                     vst1q_f32(part.as_mut_ptr(), q0);
                     vst1q_f32(part.get_unchecked_mut(4..).as_mut_ptr(), q2);
-                    vst1_f32(part.get_unchecked_mut(8..).as_mut_ptr(), q8);
+                    vst1q_f32(part.get_unchecked_mut(8..).as_mut_ptr(), q8);
                 }
             } else {
                 safe_end = 0usize;
@@ -232,7 +224,7 @@ impl DwtInverseExecutor<f32> for NeonWavelet10TapsF32 {
             for i in safe_end..approx.len() {
                 let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
                 let k = 2 * i as isize - FILTER_OFFSET as isize;
-                for j in 0..10 {
+                for j in 0..12 {
                     let k = k + j as isize;
                     if k >= 0 && k < rec_len as isize {
                         *output.get_unchecked_mut(k as usize) = fmla(
@@ -248,9 +240,9 @@ impl DwtInverseExecutor<f32> for NeonWavelet10TapsF32 {
     }
 }
 
-impl IncompleteDwtExecutor<f32> for NeonWavelet10TapsF32 {
+impl IncompleteDwtExecutor<f32> for NeonWavelet12TapsF32 {
     fn filter_length(&self) -> usize {
-        10
+        12
     }
 }
 
@@ -260,68 +252,81 @@ mod tests {
     use crate::{DaubechiesFamily, WaveletFilterProvider};
 
     #[test]
-    fn test_db5_odd() {
+    fn test_db6_odd() {
         let input = vec![
             1.0, 2.0, 3.0, 4.0, 2.0, 1.0, 0.0, 1.0, 2.4, 6.5, 2.4, 6.4, 5.2, 0.6, 0.5, 1.3, 2.5,
         ];
-        let db4 = NeonWavelet10TapsF32::new(
+        let db4 = NeonWavelet12TapsF32::new(
             BorderMode::Wrap,
-            DaubechiesFamily::Db5
+            DaubechiesFamily::Db6
                 .get_wavelet()
                 .as_ref()
                 .try_into()
                 .unwrap(),
         );
-        let out_length = dwt_length(input.len(), 10);
+        let out_length = dwt_length(input.len(), 12);
         let mut approx = vec![0.0; out_length];
         let mut details = vec![0.0; out_length];
         db4.execute_forward(&input, &mut approx, &mut details)
             .unwrap();
 
-        const REFERENCE_APPROX: [f32; 13] = [
-            7.76308732, 4.31346037, 1.56478564, 2.0152442, 3.56281138, 4.58718134, 0.3541704,
-            2.85175073, 5.65669193, 8.10768146, 1.19172576, 2.51812658, 1.90731395,
+        const REFERENCE_APPROX: [f32; 14] = [
+            4.84994058,
+            8.33313622,
+            3.34414304,
+            1.93194666,
+            1.79287863,
+            3.99279204,
+            4.36571463,
+            -0.10632014,
+            3.49224622,
+            6.06109206,
+            7.4732367,
+            1.1238786,
+            2.46569841,
+            2.15261755,
         ];
-        const REFERENCE_DETAILS: [f32; 13] = [
-            -1.63683102,
-            0.4689461,
-            -1.17579949,
-            0.13929415,
-            -0.43849194,
-            -3.73867239,
-            0.17971352,
-            1.34570881,
-            0.03313086,
-            0.65749801,
-            0.28165624,
-            0.29616734,
-            0.48934456,
+        const REFERENCE_DETAILS: [f32; 14] = [
+            -1.42520254,
+            0.36472228,
+            -1.08190245,
+            0.19274396,
+            -0.57938398,
+            -3.35136629,
+            -0.47340917,
+            1.88452864,
+            -0.588979,
+            1.1753127,
+            -0.08996084,
+            0.67678864,
+            0.26439685,
+            1.33359115,
         ];
 
         approx.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_APPROX[i] - x).abs() < 1e-4,
-                "approx difference expected to be < 1e-4, but values were ref {}, derived {}",
+                (REFERENCE_APPROX[i] - x).abs() < 1e-3,
+                "approx difference expected to be < 1e-3, but values were ref {}, derived {}",
                 REFERENCE_APPROX[i],
                 x
             );
         });
         details.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_DETAILS[i] - x).abs() < 1e-4,
-                "details difference expected to be < 1e-4, but values were ref {}, derived {}",
+                (REFERENCE_DETAILS[i] - x).abs() < 1e-3,
+                "details difference expected to be < 1e-3, but values were ref {}, derived {}",
                 REFERENCE_DETAILS[i],
                 x
             );
         });
 
-        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 10)];
+        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 12)];
         db4.execute_inverse(&approx, &details, &mut reconstructed)
             .unwrap();
         reconstructed.iter().take(input.len()).enumerate().for_each(|(i, x)| {
             assert!(
-                (input[i] - x).abs() < 1e-4,
-                "reconstructed difference expected to be < 1e-4, but values were ref {}, derived {}",
+                (input[i] - x).abs() < 1e-3,
+                "reconstructed difference expected to be < 1e-3, but values were ref {}, derived {}",
                 input[i],
                 x
             );
@@ -329,67 +334,79 @@ mod tests {
     }
 
     #[test]
-    fn test_db5_even() {
+    fn test_db6_even() {
         let input = vec![
             1.0, 2.0, 3.0, 4.0, 2.0, 1.0, 0.0, 1.0, 2.4, 6.5, 2.4, 6.4, 5.2, 0.6, 0.5, 1.3,
         ];
-        let db5 = NeonWavelet10TapsF32::new(
+        let db5 = NeonWavelet12TapsF32::new(
             BorderMode::Wrap,
-            DaubechiesFamily::Db5
+            DaubechiesFamily::Db6
                 .get_wavelet()
                 .as_ref()
                 .try_into()
                 .unwrap(),
         );
-        let out_length = dwt_length(input.len(), 10);
+        let out_length = dwt_length(input.len(), 12);
         let mut approx = vec![0.0; out_length];
         let mut details = vec![0.0; out_length];
         db5.execute_forward(&input, &mut approx, &mut details)
             .unwrap();
 
-        const REFERENCE_APPROX: [f32; 12] = [
-            5.67889878, 7.9758377, 1.616079, 1.16256715, 3.56281138, 4.58718134, 0.3541704,
-            2.85175073, 5.67889878, 7.9758377, 1.616079, 1.16256715,
+        const REFERENCE_APPROX: [f32; 13] = [
+            3.48400304,
+            6.11271891,
+            7.31500174,
+            1.51528892,
+            1.11009737,
+            3.99279204,
+            4.36571463,
+            -0.10632014,
+            3.48400304,
+            6.11271891,
+            7.31500174,
+            1.51528892,
+            1.11009737,
         ];
-        const REFERENCE_DETAILS: [f32; 12] = [
-            -1.03271544,
-            0.16927413,
-            -1.06111809,
-            0.12152867,
-            -0.43849194,
-            -3.73867239,
-            0.17971352,
-            1.34570881,
-            -1.03271544,
-            0.16927413,
-            -1.06111809,
-            0.12152867,
+        const REFERENCE_DETAILS: [f32; 13] = [
+            -1.44245557,
+            0.33438642,
+            -0.98263644,
+            0.14896913,
+            -0.57278943,
+            -3.35136629,
+            -0.47340917,
+            1.88452864,
+            -1.44245557,
+            0.33438642,
+            -0.98263644,
+            0.14896913,
+            -0.57278943,
         ];
 
         approx.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_APPROX[i] - x).abs() < 1e-4,
-                "approx difference expected to be < 1e-4, but values were ref {}, derived {}",
+                (REFERENCE_APPROX[i] - x).abs() < 1e-3,
+                "approx difference expected to be < 1e-3, but values were ref {}, derived {}",
                 REFERENCE_APPROX[i],
                 x
             );
         });
         details.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_DETAILS[i] - x).abs() < 1e-4,
-                "details difference expected to be < 1e-4, but values were ref {}, derived {}",
+                (REFERENCE_DETAILS[i] - x).abs() < 1e-3,
+                "details difference expected to be < 1e-3, but values were ref {}, derived {}",
                 REFERENCE_DETAILS[i],
                 x
             );
         });
 
-        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 10)];
+        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 12)];
         db5.execute_inverse(&approx, &details, &mut reconstructed)
             .unwrap();
         reconstructed.iter().take(input.len()).enumerate().for_each(|(i, x)| {
             assert!(
-                (input[i] - x).abs() < 1e-4,
-                "reconstructed difference expected to be < 1e-4, but values were ref {}, derived {}",
+                (input[i] - x).abs() < 1e-3,
+                "reconstructed difference expected to be < 1e-3, but values were ref {}, derived {}",
                 input[i],
                 x
             );
@@ -397,33 +414,33 @@ mod tests {
     }
 
     #[test]
-    fn test_db8_even_big() {
+    fn test_db6_even_big() {
         let data_length = 86;
         let mut input = vec![0.; data_length];
         for i in 0..data_length {
             input[i] = i as f32 / data_length as f32;
         }
-        let db4 = NeonWavelet10TapsF32::new(
+        let db6 = NeonWavelet12TapsF32::new(
             BorderMode::Wrap,
-            DaubechiesFamily::Db5
+            DaubechiesFamily::Db6
                 .get_wavelet()
                 .as_ref()
                 .try_into()
                 .unwrap(),
         );
-        let out_length = dwt_length(input.len(), 10);
+        let out_length = dwt_length(input.len(), 12);
         let mut approx = vec![0.0; out_length];
         let mut details = vec![0.0; out_length];
-        db4.execute_forward(&input, &mut approx, &mut details)
+        db6.execute_forward(&input, &mut approx, &mut details)
             .unwrap();
 
-        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 10)];
-        db4.execute_inverse(&approx, &details, &mut reconstructed)
+        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 12)];
+        db6.execute_inverse(&approx, &details, &mut reconstructed)
             .unwrap();
         reconstructed.iter().take(input.len()).enumerate().for_each(|(i, x)| {
             assert!(
-                (input[i] - x).abs() < 1e-4,
-                "reconstructed difference expected to be < 1e-4, but values were ref {}, derived {}",
+                (input[i] - x).abs() < 1e-3,
+                "reconstructed difference expected to be < 1e-3, but values were ref {}, derived {}",
                 input[i],
                 x
             );

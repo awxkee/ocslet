@@ -400,6 +400,7 @@ macro_rules! define_integer_cdf {
 
 define_integer_cdf!(Cdf53Integer, 3);
 
+#[allow(unused)]
 pub(crate) use define_integer_cdf;
 
 #[cfg(test)]

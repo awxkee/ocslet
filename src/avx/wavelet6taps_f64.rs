@@ -373,7 +373,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db3
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -443,7 +443,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db3
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -512,7 +512,7 @@ mod tests {
             BorderMode::Wrap,
             CoifletFamily::Coif1
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );

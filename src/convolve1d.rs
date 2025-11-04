@@ -28,7 +28,7 @@
  */
 use crate::BorderMode;
 use crate::err::OscletError;
-use crate::filter_padding::make_arena_1d;
+use crate::filter_padding::{MakeArenaFactoryProvider, make_arena_1d};
 use crate::mla::fmla;
 use num_traits::{AsPrimitive, MulAdd};
 use std::marker::PhantomData;
@@ -104,8 +104,15 @@ pub(crate) struct ScalarConvolution1d<T> {
     border_mode: BorderMode,
 }
 
-impl<T: Copy + 'static + MulAdd<T, Output = T> + Add<T, Output = T> + Mul<T, Output = T> + Default>
-    Convolve1d<T> for ScalarConvolution1d<T>
+impl<
+    T: Copy
+        + 'static
+        + MulAdd<T, Output = T>
+        + Add<T, Output = T>
+        + Mul<T, Output = T>
+        + Default
+        + MakeArenaFactoryProvider<T>,
+> Convolve1d<T> for ScalarConvolution1d<T>
 where
     f64: AsPrimitive<T>,
 {

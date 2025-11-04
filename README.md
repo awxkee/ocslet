@@ -10,7 +10,6 @@ workloads where speed and precision are critical.
 ## Features
 
 - Multi-level **DWT decomposition** for `f32` and `f64` signals.
-- **IDWT reconstruction** with exact recovery of the original signal.
 - Support for **Daubechies wavelets** of various orders (db2, db3, db4, etc.).
 - Optimized for **ARM NEON** and **x86 SIMD** instructions.
 - Thread-safe and can be used in parallel contexts (`Send + Sync`).

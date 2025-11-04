@@ -106,3 +106,9 @@ pub(crate) fn afmla<T: Copy + Mul<T, Output = T> + Add<T, Output = T> + MulAdd<T
 ) -> T {
     MulAdd::mul_add(a, b, c)
 }
+
+#[inline]
+#[target_feature(enable = "sse2")]
+pub(crate) unsafe fn _mm_unpackhilo_ps64(a: __m128, b: __m128) -> __m128 {
+    _mm_shuffle_ps::<{ shuffle(1, 0, 3, 2) }>(a, b)
+}

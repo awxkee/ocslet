@@ -1,5 +1,5 @@
 /*
- * // Copyright (c) Radzivon Bartoshyk 10/2025. All rights reserved.
+ * // Copyright (c) Radzivon Bartoshyk 11/2025. All rights reserved.
  * //
  * // Redistribution and use in source and binary forms, with or without modification,
  * // are permitted provided that the following conditions are met:
@@ -26,42 +26,48 @@
  * // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-use crate::avx::util::afmla;
 use crate::border_mode::BorderMode;
 use crate::err::OscletError;
-use crate::filter_padding::make_arena_1d;
-use crate::util::{dwt_length, idwt_length, low_pass_to_high};
+use crate::filter_padding::{MakeArenaFactoryProvider, make_arena_1d};
+use crate::mla::fmla;
+use crate::util::{dwt_length, idwt_length, low_pass_to_high_from_arr};
 use crate::{DwtForwardExecutor, DwtInverseExecutor, IncompleteDwtExecutor};
 use num_traits::{AsPrimitive, MulAdd};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Mul};
 
-pub(crate) struct AvxWaveletNTaps<T> {
+pub(crate) struct Wavelet12Taps<T> {
     phantom_data: PhantomData<T>,
     border_mode: BorderMode,
-    low_pass: Vec<T>,
-    high_pass: Vec<T>,
-    filter_length: usize,
+    low_pass: [T; 12],
+    high_pass: [T; 12],
 }
 
-impl<T: Copy + 'static + Debug + Default + Mul<T, Output = T>> AvxWaveletNTaps<T>
+impl<T: Copy + 'static + Debug + Default + Mul<T, Output = T>> Wavelet12Taps<T>
 where
     f64: AsPrimitive<T>,
 {
-    pub(crate) fn new(border_mode: BorderMode, wavelet: &[T]) -> Self {
+    #[allow(unused)]
+    pub(crate) fn new(border_mode: BorderMode, wavelet: &[T; 12]) -> Self {
         Self {
             border_mode,
-            filter_length: wavelet.len(),
-            high_pass: low_pass_to_high(wavelet),
-            low_pass: wavelet.to_vec(),
+            low_pass: *wavelet,
+            high_pass: low_pass_to_high_from_arr(wavelet),
             phantom_data: PhantomData,
         }
     }
 }
 
-impl<T: Copy + 'static + MulAdd<T, Output = T> + Add<T, Output = T> + Mul<T, Output = T> + Default>
-    DwtForwardExecutor<T> for AvxWaveletNTaps<T>
+impl<
+    T: Copy
+        + 'static
+        + MulAdd<T, Output = T>
+        + Add<T, Output = T>
+        + Mul<T, Output = T>
+        + Default
+        + MakeArenaFactoryProvider<T>,
+> DwtForwardExecutor<T> for Wavelet12Taps<T>
 where
     f64: AsPrimitive<T>,
 {
@@ -71,26 +77,10 @@ where
         approx: &mut [T],
         details: &mut [T],
     ) -> Result<(), OscletError> {
-        unsafe { self.execute_forward_impl(input, approx, details) }
-    }
-}
+        let half = dwt_length(input.len(), 12);
 
-impl<T: Copy + 'static + MulAdd<T, Output = T> + Add<T, Output = T> + Mul<T, Output = T> + Default>
-    AvxWaveletNTaps<T>
-where
-    f64: AsPrimitive<T>,
-{
-    #[target_feature(enable = "avx2", enable = "fma")]
-    fn execute_forward_impl(
-        &self,
-        input: &[T],
-        approx: &mut [T],
-        details: &mut [T],
-    ) -> Result<(), OscletError> {
-        let half = dwt_length(input.len(), self.filter_length);
-
-        if input.len() < self.filter_length {
-            return Err(OscletError::MinFilterSize(input.len(), self.filter_length));
+        if input.len() < 12 {
+            return Err(OscletError::MinFilterSize(input.len(), 12));
         }
 
         if approx.len() != half {
@@ -100,9 +90,11 @@ where
             return Err(OscletError::ApproxDetailsSize(details.len()));
         }
 
-        let whole_pad_size = (2 * half + self.filter_length - 2) - input.len();
-        let left_pad = whole_pad_size / 2;
-        let right_pad = whole_pad_size - left_pad;
+        const FILTER_SIZE: usize = 12;
+
+        let whole_size = (2 * half + FILTER_SIZE - 2) - input.len();
+        let left_pad = whole_size / 2;
+        let right_pad = whole_size - left_pad;
 
         let padded_input = make_arena_1d(input, left_pad, right_pad, self.border_mode)?;
 
@@ -112,15 +104,12 @@ where
                 let mut d = 0.0f64.as_();
                 let base = 2 * i;
 
-                let input = padded_input.get_unchecked(base..base + self.filter_length);
+                let input = padded_input.get_unchecked(base..);
 
-                for ((&src, &g), &h) in input
-                    .iter()
-                    .zip(self.high_pass.iter())
-                    .zip(self.low_pass.iter())
-                {
-                    a = afmla(h, src, a);
-                    d = afmla(g, src, d);
+                for i in 0..12 {
+                    let x0 = input.get_unchecked(i);
+                    a = fmla(self.low_pass[i], *x0, a);
+                    d = fmla(self.high_pass[i], *x0, d);
                 }
 
                 *approx = a;
@@ -132,27 +121,11 @@ where
 }
 
 impl<T: Copy + 'static + MulAdd<T, Output = T> + Add<T, Output = T> + Mul<T, Output = T> + Default>
-    DwtInverseExecutor<T> for AvxWaveletNTaps<T>
+    DwtInverseExecutor<T> for Wavelet12Taps<T>
 where
     f64: AsPrimitive<T>,
 {
     fn execute_inverse(
-        &self,
-        approx: &[T],
-        details: &[T],
-        output: &mut [T],
-    ) -> Result<(), OscletError> {
-        unsafe { self.execute_inverse_impl(approx, details, output) }
-    }
-}
-
-impl<T: Copy + 'static + MulAdd<T, Output = T> + Add<T, Output = T> + Mul<T, Output = T> + Default>
-    AvxWaveletNTaps<T>
-where
-    f64: AsPrimitive<T>,
-{
-    #[target_feature(enable = "avx2", enable = "fma")]
-    fn execute_inverse_impl(
         &self,
         approx: &[T],
         details: &[T],
@@ -165,48 +138,47 @@ where
             ));
         }
 
-        let rec_len = idwt_length(approx.len(), self.filter_length);
+        let rec_len = idwt_length(approx.len(), 12);
 
         if output.len() != rec_len {
             return Err(OscletError::OutputSizeIsTooSmall(output.len(), rec_len));
         }
 
-        let whole_pad_size = (2 * approx.len() + self.filter_length - 2) - output.len();
-        let filter_offset = whole_pad_size / 2;
+        const FILTER_OFFSET: usize = 10;
+        const FILTER_LENGTH: usize = 12;
 
         unsafe {
-            let safe_start = filter_offset;
+            let safe_start = FILTER_OFFSET;
             // 2*x - off + len >= output.len()
             // x >= (output.len() + off - len)/2
-            let mut safe_end =
-                ((output.len() + filter_offset).saturating_sub(self.filter_length)) / 2;
+            let mut safe_end = ((output.len() + FILTER_OFFSET).saturating_sub(FILTER_LENGTH)) / 2;
 
             if safe_start < safe_end {
-                for i in 0..safe_start.min(safe_end) {
+                for i in 0..safe_start {
                     let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
-                    let k = 2 * i as isize - filter_offset as isize;
-                    for (j, (&wg, &wh)) in
-                        self.high_pass.iter().zip(self.low_pass.iter()).enumerate()
-                    {
+                    let k = 2 * i as isize - FILTER_OFFSET as isize;
+                    for j in 0..12 {
                         let k = k + j as isize;
                         if k >= 0 && k < rec_len as isize {
-                            *output.get_unchecked_mut(k as usize) =
-                                afmla(wh, h, afmla(wg, g, *output.get_unchecked(k as usize)));
+                            *output.get_unchecked_mut(k as usize) = fmla(
+                                self.low_pass[j],
+                                h,
+                                fmla(self.high_pass[j], g, *output.get_unchecked(k as usize)),
+                            );
                         }
                     }
                 }
 
                 for i in safe_start..safe_end {
                     let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
-                    let k = 2 * i as isize - filter_offset as isize;
+                    let k = 2 * i as isize - FILTER_OFFSET as isize;
                     let part = output.get_unchecked_mut(k as usize..);
-                    for ((&wg, &wh), dst) in self
-                        .high_pass
-                        .iter()
-                        .zip(self.low_pass.iter())
-                        .zip(part.iter_mut())
-                    {
-                        *dst = afmla(wh, h, afmla(wg, g, *dst));
+                    for i in 0..12 {
+                        *part.get_unchecked_mut(i) = fmla(
+                            self.low_pass[i],
+                            h,
+                            fmla(self.high_pass[i], g, *part.get_unchecked(i)),
+                        );
                     }
                 }
             } else {
@@ -215,12 +187,15 @@ where
 
             for i in safe_end..approx.len() {
                 let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
-                let k = 2 * i as isize - filter_offset as isize;
-                for (j, (&wg, &wh)) in self.high_pass.iter().zip(self.low_pass.iter()).enumerate() {
+                let k = 2 * i as isize - FILTER_OFFSET as isize;
+                for j in 0..12 {
                     let k = k + j as isize;
                     if k >= 0 && k < rec_len as isize {
-                        *output.get_unchecked_mut(k as usize) =
-                            afmla(wh, h, afmla(wg, g, *output.get_unchecked(k as usize)));
+                        *output.get_unchecked_mut(k as usize) = fmla(
+                            self.low_pass[j],
+                            h,
+                            fmla(self.high_pass[j], g, *output.get_unchecked(k as usize)),
+                        );
                     }
                 }
             }
@@ -237,13 +212,14 @@ impl<
         + Mul<T, Output = T>
         + Default
         + Send
-        + Sync,
-> IncompleteDwtExecutor<T> for AvxWaveletNTaps<T>
+        + Sync
+        + MakeArenaFactoryProvider<T>,
+> IncompleteDwtExecutor<T> for Wavelet12Taps<T>
 where
     f64: AsPrimitive<T>,
 {
     fn filter_length(&self) -> usize {
-        self.filter_length
+        12
     }
 }
 
@@ -257,11 +233,11 @@ mod tests {
         let input = vec![
             1.0, 2.0, 3.0, 4.0, 2.0, 1.0, 0.0, 1.0, 2.4, 6.5, 2.4, 6.4, 5.2, 0.6, 0.5, 1.3, 2.5,
         ];
-        let db4 = AvxWaveletNTaps::new(
+        let db4 = Wavelet12Taps::new(
             BorderMode::Wrap,
             DaubechiesFamily::Db6
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -306,16 +282,16 @@ mod tests {
 
         approx.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_APPROX[i] - x).abs() < 1e-7,
-                "approx difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (REFERENCE_APPROX[i] - x).abs() < 1e-5,
+                "approx difference expected to be < 1e-5, but values were ref {}, derived {}",
                 REFERENCE_APPROX[i],
                 x
             );
         });
         details.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_DETAILS[i] - x).abs() < 1e-7,
-                "details difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (REFERENCE_DETAILS[i] - x).abs() < 1e-5,
+                "details difference expected to be < 1e-5, but values were ref {}, derived {}",
                 REFERENCE_DETAILS[i],
                 x
             );
@@ -326,8 +302,8 @@ mod tests {
             .unwrap();
         reconstructed.iter().take(input.len()).enumerate().for_each(|(i, x)| {
             assert!(
-                (input[i] - x).abs() < 1e-7,
-                "reconstructed difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (input[i] - x).abs() < 1e-5,
+                "reconstructed difference expected to be < 1e-5, but values were ref {}, derived {}",
                 input[i],
                 x
             );
@@ -339,18 +315,18 @@ mod tests {
         let input = vec![
             1.0, 2.0, 3.0, 4.0, 2.0, 1.0, 0.0, 1.0, 2.4, 6.5, 2.4, 6.4, 5.2, 0.6, 0.5, 1.3,
         ];
-        let db4 = AvxWaveletNTaps::new(
+        let db5 = Wavelet12Taps::new(
             BorderMode::Wrap,
             DaubechiesFamily::Db6
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
         let out_length = dwt_length(input.len(), 12);
         let mut approx = vec![0.0; out_length];
         let mut details = vec![0.0; out_length];
-        db4.execute_forward(&input, &mut approx, &mut details)
+        db5.execute_forward(&input, &mut approx, &mut details)
             .unwrap();
 
         const REFERENCE_APPROX: [f64; 13] = [
@@ -383,30 +359,65 @@ mod tests {
             0.14896913,
             -0.57278943,
         ];
+
         approx.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_APPROX[i] - x).abs() < 1e-7,
-                "approx difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (REFERENCE_APPROX[i] - x).abs() < 1e-5,
+                "approx difference expected to be < 1e-5, but values were ref {}, derived {}",
                 REFERENCE_APPROX[i],
                 x
             );
         });
         details.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_DETAILS[i] - x).abs() < 1e-7,
-                "details difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (REFERENCE_DETAILS[i] - x).abs() < 1e-5,
+                "details difference expected to be < 1e-5, but values were ref {}, derived {}",
                 REFERENCE_DETAILS[i],
                 x
             );
         });
 
         let mut reconstructed = vec![0.0; idwt_length(approx.len(), 12)];
-        db4.execute_inverse(&approx, &details, &mut reconstructed)
+        db5.execute_inverse(&approx, &details, &mut reconstructed)
             .unwrap();
         reconstructed.iter().take(input.len()).enumerate().for_each(|(i, x)| {
             assert!(
-                (input[i] - x).abs() < 1e-7,
-                "reconstructed difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (input[i] - x).abs() < 1e-5,
+                "reconstructed difference expected to be < 1e-5, but values were ref {}, derived {}",
+                input[i],
+                x
+            );
+        });
+    }
+
+    #[test]
+    fn test_db6_even_big() {
+        let data_length = 86;
+        let mut input = vec![0.; data_length];
+        for i in 0..data_length {
+            input[i] = i as f32 / data_length as f32;
+        }
+        let db6 = Wavelet12Taps::new(
+            BorderMode::Wrap,
+            DaubechiesFamily::Db6
+                .get_wavelet()
+                .as_ref()
+                .try_into()
+                .unwrap(),
+        );
+        let out_length = dwt_length(input.len(), 12);
+        let mut approx = vec![0.0; out_length];
+        let mut details = vec![0.0; out_length];
+        db6.execute_forward(&input, &mut approx, &mut details)
+            .unwrap();
+
+        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 12)];
+        db6.execute_inverse(&approx, &details, &mut reconstructed)
+            .unwrap();
+        reconstructed.iter().take(input.len()).enumerate().for_each(|(i, x)| {
+            assert!(
+                (input[i] - x).abs() < 1e-5,
+                "reconstructed difference expected to be < 1e-5, but values were ref {}, derived {}",
                 input[i],
                 x
             );

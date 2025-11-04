@@ -722,6 +722,75 @@ mod tests {
     }
 
     #[test]
+    fn test_modwt_db2_level_odd() {
+        const R: [f64; 17] = [
+            0.7500000000000001,
+            -0.5000000000000001,
+            -0.5000000000000001,
+            -0.5,
+            1.0000000000000002,
+            0.5000000000000001,
+            0.5000000000000001,
+            -0.5000000000000001,
+            -0.7000000000000001,
+            -2.0500000000000007,
+            2.0500000000000007,
+            -2.000000000000001,
+            0.6000000000000004,
+            2.3000000000000003,
+            0.04999999999999999,
+            -0.40000000000000013,
+            -0.6000000000000001,
+        ];
+
+        const G: [f64; 17] = [
+            1.7500000000000004,
+            1.5000000000000004,
+            2.5000000000000004,
+            3.500000000000001,
+            3.000000000000001,
+            1.5000000000000004,
+            0.5000000000000001,
+            0.5000000000000001,
+            1.7000000000000004,
+            4.450000000000001,
+            4.450000000000001,
+            4.400000000000001,
+            5.800000000000002,
+            2.900000000000001,
+            0.55,
+            0.9000000000000002,
+            1.9000000000000004,
+        ];
+
+        let input = vec![
+            1.0, 2.0, 3.0, 4.0, 2.0, 1.0, 0.0, 1.0, 2.4, 6.5, 2.4, 6.4, 5.2, 0.6, 0.5, 1.3, 2.5,
+        ];
+
+        let handler = MoDwtHandler::new(
+            fill_wavelet(&DaubechiesFamily::Db1.get_wavelet()).unwrap(),
+            f64::make_convolution_1d(BorderMode::Wrap),
+        );
+        let result = handler.modwt(&input, 0).unwrap();
+        result.approximations.iter().enumerate().for_each(|(i, x)| {
+            assert!(
+                (R[i] - x).abs() < 1e-7,
+                "approximations difference expected to be < 1e-7, but values were ref {}, derived {}",
+                R [i],
+                x
+            );
+        });
+        result.details.iter().enumerate().for_each(|(i, x)| {
+            assert!(
+                (G[i] - x).abs() < 1e-7,
+                "details difference expected to be < 1e-7, but values were ref {}, derived {}",
+                G[i],
+                x
+            );
+        });
+    }
+
+    #[test]
     fn test_modwt_round_trip() {
         const R: [f64; 16] = [
             0.2933012701892219,

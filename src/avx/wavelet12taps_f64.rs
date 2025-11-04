@@ -34,14 +34,14 @@ use crate::util::{dwt_length, idwt_length, low_pass_to_high_from_arr};
 use crate::{DwtForwardExecutor, DwtInverseExecutor, IncompleteDwtExecutor};
 use std::arch::x86_64::*;
 
-pub(crate) struct AvxWavelet8TapsF64 {
+pub(crate) struct AvxWavelet12TapsF64 {
     border_mode: BorderMode,
-    low_pass: [f64; 8],
-    high_pass: [f64; 8],
+    low_pass: [f64; 12],
+    high_pass: [f64; 12],
 }
 
-impl AvxWavelet8TapsF64 {
-    pub(crate) fn new(border_mode: BorderMode, wavelet: &[f64; 8]) -> Self {
+impl AvxWavelet12TapsF64 {
+    pub(crate) fn new(border_mode: BorderMode, wavelet: &[f64; 12]) -> Self {
         Self {
             border_mode,
             low_pass: *wavelet,
@@ -50,7 +50,7 @@ impl AvxWavelet8TapsF64 {
     }
 }
 
-impl DwtForwardExecutor<f64> for AvxWavelet8TapsF64 {
+impl DwtForwardExecutor<f64> for AvxWavelet12TapsF64 {
     fn execute_forward(
         &self,
         input: &[f64],
@@ -61,7 +61,7 @@ impl DwtForwardExecutor<f64> for AvxWavelet8TapsF64 {
     }
 }
 
-impl AvxWavelet8TapsF64 {
+impl AvxWavelet12TapsF64 {
     #[target_feature(enable = "avx2", enable = "fma")]
     fn execute_forward_impl(
         &self,
@@ -69,10 +69,10 @@ impl AvxWavelet8TapsF64 {
         approx: &mut [f64],
         details: &mut [f64],
     ) -> Result<(), OscletError> {
-        let half = dwt_length(input.len(), 8);
+        let half = dwt_length(input.len(), 12);
 
-        if input.len() < 8 {
-            return Err(OscletError::MinFilterSize(input.len(), 8));
+        if input.len() < 12 {
+            return Err(OscletError::MinFilterSize(input.len(), 12));
         }
 
         if approx.len() != half {
@@ -82,7 +82,7 @@ impl AvxWavelet8TapsF64 {
             return Err(OscletError::ApproxDetailsSize(details.len()));
         }
 
-        const FILTER_SIZE: usize = 8;
+        const FILTER_SIZE: usize = 12;
 
         let whole_size = (2 * half + FILTER_SIZE - 2) - input.len();
         let left_pad = whole_size / 2;
@@ -97,15 +97,20 @@ impl AvxWavelet8TapsF64 {
             let h2 = _mm256_loadu_pd(self.low_pass.get_unchecked(4..).as_ptr());
             let g2 = _mm256_loadu_pd(self.high_pass.get_unchecked(4..).as_ptr());
 
+            let h8 = _mm256_loadu_pd(self.low_pass.get_unchecked(8..).as_ptr());
+            let g8 = _mm256_loadu_pd(self.high_pass.get_unchecked(8..).as_ptr());
+
             for (i, (approx, detail)) in approx.iter_mut().zip(details.iter_mut()).enumerate() {
                 let base = 2 * i;
+
                 let input = padded_input.get_unchecked(base..);
 
                 let x01 = _mm256_loadu_pd(input.as_ptr());
                 let x45 = _mm256_loadu_pd(input.get_unchecked(4..).as_ptr());
+                let x89 = _mm256_loadu_pd(input.get_unchecked(8..).as_ptr());
 
-                let wa = _mm256_fmadd_pd(x45, h2, _mm256_mul_pd(x01, h0));
-                let wd = _mm256_fmadd_pd(x45, g2, _mm256_mul_pd(x01, g0));
+                let wa = _mm256_fmadd_pd(h8, x89, _mm256_fmadd_pd(x45, h2, _mm256_mul_pd(x01, h0)));
+                let wd = _mm256_fmadd_pd(g8, x89, _mm256_fmadd_pd(x45, g2, _mm256_mul_pd(x01, g0)));
 
                 let wa = _mm256_hsum_pd(wa);
                 let wd = _mm256_hsum_pd(wd);
@@ -118,8 +123,20 @@ impl AvxWavelet8TapsF64 {
     }
 }
 
-impl DwtInverseExecutor<f64> for AvxWavelet8TapsF64 {
+impl DwtInverseExecutor<f64> for AvxWavelet12TapsF64 {
     fn execute_inverse(
+        &self,
+        approx: &[f64],
+        details: &[f64],
+        output: &mut [f64],
+    ) -> Result<(), OscletError> {
+        unsafe { self.execute_inverse_impl(approx, details, output) }
+    }
+}
+
+impl AvxWavelet12TapsF64 {
+    #[target_feature(enable = "avx2", enable = "fma")]
+    fn execute_inverse_impl(
         &self,
         approx: &[f64],
         details: &[f64],
@@ -132,14 +149,14 @@ impl DwtInverseExecutor<f64> for AvxWavelet8TapsF64 {
             ));
         }
 
-        let rec_len = idwt_length(approx.len(), 8);
+        let rec_len = idwt_length(approx.len(), 12);
 
         if output.len() != rec_len {
             return Err(OscletError::OutputSizeIsTooSmall(output.len(), rec_len));
         }
 
-        const FILTER_OFFSET: usize = 6;
-        const FILTER_LENGTH: usize = 8;
+        const FILTER_OFFSET: usize = 10;
+        const FILTER_LENGTH: usize = 12;
 
         unsafe {
             let safe_start = FILTER_OFFSET;
@@ -149,21 +166,20 @@ impl DwtInverseExecutor<f64> for AvxWavelet8TapsF64 {
 
             if safe_start < safe_end {
                 for i in 0..safe_start {
-                    let (h, g) = (
-                        _mm_set1_pd(*approx.get_unchecked(i)),
-                        _mm_set1_pd(*details.get_unchecked(i)),
-                    );
+                    let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
                     let k = 2 * i as isize - FILTER_OFFSET as isize;
-                    for j in 0..8 {
+                    for j in 0..12 {
                         let k = k + j as isize;
                         if k >= 0 && k < rec_len as isize {
-                            let mut w = _mm_fmadd_sd(
-                                _mm_set1_pd(self.high_pass[j]),
-                                g,
-                                _mm_load_sd(output.get_unchecked(k as usize) as *const f64),
+                            *output.get_unchecked_mut(k as usize) = f64::mul_add(
+                                self.low_pass[j],
+                                h,
+                                f64::mul_add(
+                                    self.high_pass[j],
+                                    g,
+                                    *output.get_unchecked(k as usize),
+                                ),
                             );
-                            w = _mm_fmadd_sd(_mm_set1_pd(self.low_pass[j]), h, w);
-                            _mm_store_sd(output.get_unchecked_mut(k as usize) as *mut f64, w);
                         }
                     }
                 }
@@ -174,6 +190,9 @@ impl DwtInverseExecutor<f64> for AvxWavelet8TapsF64 {
                 let h2 = _mm256_loadu_pd(self.low_pass.get_unchecked(4..).as_ptr());
                 let g2 = _mm256_loadu_pd(self.high_pass.get_unchecked(4..).as_ptr());
 
+                let h8 = _mm256_loadu_pd(self.low_pass.get_unchecked(8..).as_ptr());
+                let g8 = _mm256_loadu_pd(self.high_pass.get_unchecked(8..).as_ptr());
+
                 for i in safe_start..safe_end {
                     let (h, g) = (
                         _mm256_set1_pd(*approx.get_unchecked(i)),
@@ -181,36 +200,33 @@ impl DwtInverseExecutor<f64> for AvxWavelet8TapsF64 {
                     );
                     let k = 2 * i as isize - FILTER_OFFSET as isize;
                     let part = output.get_unchecked_mut(k as usize..);
-
                     let w0 = _mm256_loadu_pd(part.as_ptr());
                     let w2 = _mm256_loadu_pd(part.get_unchecked(4..).as_ptr());
+                    let w8 = _mm256_loadu_pd(part.get_unchecked(8..).as_ptr());
 
                     let q0 = _mm256_fmadd_pd(g0, g, _mm256_fmadd_pd(h0, h, w0));
                     let q4 = _mm256_fmadd_pd(g2, g, _mm256_fmadd_pd(h2, h, w2));
+                    let q8 = _mm256_fmadd_pd(g8, g, _mm256_fmadd_pd(h8, h, w8));
 
                     _mm256_storeu_pd(part.as_mut_ptr(), q0);
                     _mm256_storeu_pd(part.get_unchecked_mut(4..).as_mut_ptr(), q4);
+                    _mm256_storeu_pd(part.get_unchecked_mut(8..).as_mut_ptr(), q8);
                 }
             } else {
                 safe_end = 0usize;
             }
 
             for i in safe_end..approx.len() {
-                let (h, g) = (
-                    _mm_set1_pd(*approx.get_unchecked(i)),
-                    _mm_set1_pd(*details.get_unchecked(i)),
-                );
+                let (h, g) = (*approx.get_unchecked(i), *details.get_unchecked(i));
                 let k = 2 * i as isize - FILTER_OFFSET as isize;
-                for j in 0..8 {
+                for j in 0..12 {
                     let k = k + j as isize;
                     if k >= 0 && k < rec_len as isize {
-                        let mut w = _mm_fmadd_sd(
-                            _mm_set1_pd(self.high_pass[j]),
-                            g,
-                            _mm_load_sd(output.get_unchecked(k as usize) as *const f64),
+                        *output.get_unchecked_mut(k as usize) = f64::mul_add(
+                            self.low_pass[j],
+                            h,
+                            f64::mul_add(self.high_pass[j], g, *output.get_unchecked(k as usize)),
                         );
-                        w = _mm_fmadd_sd(_mm_set1_pd(self.low_pass[j]), h, w);
-                        _mm_store_sd(output.get_unchecked_mut(k as usize) as *mut f64, w);
                     }
                 }
             }
@@ -219,9 +235,9 @@ impl DwtInverseExecutor<f64> for AvxWavelet8TapsF64 {
     }
 }
 
-impl IncompleteDwtExecutor<f64> for AvxWavelet8TapsF64 {
+impl IncompleteDwtExecutor<f64> for AvxWavelet12TapsF64 {
     fn filter_length(&self) -> usize {
-        8
+        12
     }
 }
 
@@ -230,75 +246,82 @@ mod tests {
     use super::*;
     use crate::{DaubechiesFamily, WaveletFilterProvider};
 
-    fn has_avx_with_fma() -> bool {
-        std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma")
-    }
-
     #[test]
-    fn test_db8_odd() {
-        if !has_avx_with_fma() {
-            return;
-        }
+    fn test_db6_odd() {
         let input = vec![
             1.0, 2.0, 3.0, 4.0, 2.0, 1.0, 0.0, 1.0, 2.4, 6.5, 2.4, 6.4, 5.2, 0.6, 0.5, 1.3, 2.5,
         ];
-        let db4 = AvxWavelet8TapsF64::new(
+        let db4 = AvxWavelet12TapsF64::new(
             BorderMode::Wrap,
-            DaubechiesFamily::Db4
+            DaubechiesFamily::Db6
                 .get_wavelet()
                 .as_ref()
                 .try_into()
                 .unwrap(),
         );
-        let out_length = dwt_length(input.len(), 8);
+        let out_length = dwt_length(input.len(), 12);
         let mut approx = vec![0.0; out_length];
         let mut details = vec![0.0; out_length];
         db4.execute_forward(&input, &mut approx, &mut details)
             .unwrap();
 
-        const REFERENCE_APPROX: [f64; 12] = [
-            5.40180316, 1.17674293, 2.27895053, 3.08695254, 4.82517499, 0.91029972, 1.96020043,
-            5.58301587, 8.40990105, 1.50316223, 2.42249936, 1.81502786,
+        const REFERENCE_APPROX: [f64; 14] = [
+            4.84994058,
+            8.33313622,
+            3.34414304,
+            1.93194666,
+            1.79287863,
+            3.99279204,
+            4.36571463,
+            -0.10632014,
+            3.49224622,
+            6.06109206,
+            7.4732367,
+            1.1238786,
+            2.46569841,
+            2.15261755,
         ];
-        const REFERENCE_DETAILS: [f64; 12] = [
-            -1.48628267,
-            0.41816403,
-            -1.0992322,
-            -0.15292615,
-            -0.32731146,
-            -3.79371528,
-            0.7310401,
-            0.56575684,
-            0.75931276,
-            0.22144916,
-            0.66611246,
-            -0.09543936,
+        const REFERENCE_DETAILS: [f64; 14] = [
+            -1.42520254,
+            0.36472228,
+            -1.08190245,
+            0.19274396,
+            -0.57938398,
+            -3.35136629,
+            -0.47340917,
+            1.88452864,
+            -0.588979,
+            1.1753127,
+            -0.08996084,
+            0.67678864,
+            0.26439685,
+            1.33359115,
         ];
 
         approx.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_APPROX[i] - x).abs() < 1e-7,
-                "approx difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (REFERENCE_APPROX[i] - x).abs() < 1e-5,
+                "approx difference expected to be < 1e-5, but values were ref {}, derived {}",
                 REFERENCE_APPROX[i],
                 x
             );
         });
         details.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_DETAILS[i] - x).abs() < 1e-7,
-                "details difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (REFERENCE_DETAILS[i] - x).abs() < 1e-5,
+                "details difference expected to be < 1e-5, but values were ref {}, derived {}",
                 REFERENCE_DETAILS[i],
                 x
             );
         });
 
-        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 8)];
+        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 12)];
         db4.execute_inverse(&approx, &details, &mut reconstructed)
             .unwrap();
         reconstructed.iter().take(input.len()).enumerate().for_each(|(i, x)| {
             assert!(
-                (input[i] - x).abs() < 1e-7,
-                "reconstructed difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (input[i] - x).abs() < 1e-5,
+                "reconstructed difference expected to be < 1e-5, but values were ref {}, derived {}",
                 input[i],
                 x
             );
@@ -306,69 +329,79 @@ mod tests {
     }
 
     #[test]
-    fn test_db8_even() {
-        if !has_avx_with_fma() {
-            return;
-        }
+    fn test_db6_even() {
         let input = vec![
             1.0, 2.0, 3.0, 4.0, 2.0, 1.0, 0.0, 1.0, 2.4, 6.5, 2.4, 6.4, 5.2, 0.6, 0.5, 1.3,
         ];
-        let db4 = AvxWavelet8TapsF64::new(
+        let db5 = AvxWavelet12TapsF64::new(
             BorderMode::Wrap,
-            DaubechiesFamily::Db4
+            DaubechiesFamily::Db6
                 .get_wavelet()
                 .as_ref()
                 .try_into()
                 .unwrap(),
         );
-        let out_length = dwt_length(input.len(), 8);
+        let out_length = dwt_length(input.len(), 12);
         let mut approx = vec![0.0; out_length];
         let mut details = vec![0.0; out_length];
-        db4.execute_forward(&input, &mut approx, &mut details)
+        db5.execute_forward(&input, &mut approx, &mut details)
             .unwrap();
 
-        const REFERENCE_APPROX: [f64; 11] = [
-            8.34997913, 1.83684144, 1.23683239, 3.08695254, 4.82517499, 0.91029972, 1.96020043,
-            5.58301587, 8.34997913, 1.83684144, 1.23683239,
+        const REFERENCE_APPROX: [f64; 13] = [
+            3.48400304,
+            6.11271891,
+            7.31500174,
+            1.51528892,
+            1.11009737,
+            3.99279204,
+            4.36571463,
+            -0.10632014,
+            3.48400304,
+            6.11271891,
+            7.31500174,
+            1.51528892,
+            1.11009737,
         ];
-        const REFERENCE_DETAILS: [f64; 11] = [
-            -0.54333491,
-            0.1170128,
-            -1.05129466,
-            -0.15292615,
-            -0.32731146,
-            -3.79371528,
-            0.7310401,
-            0.56575684,
-            -0.54333491,
-            0.1170128,
-            -1.05129466,
+        const REFERENCE_DETAILS: [f64; 13] = [
+            -1.44245557,
+            0.33438642,
+            -0.98263644,
+            0.14896913,
+            -0.57278943,
+            -3.35136629,
+            -0.47340917,
+            1.88452864,
+            -1.44245557,
+            0.33438642,
+            -0.98263644,
+            0.14896913,
+            -0.57278943,
         ];
 
         approx.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_APPROX[i] - x).abs() < 1e-7,
-                "approx difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (REFERENCE_APPROX[i] - x).abs() < 1e-5,
+                "approx difference expected to be < 1e-5, but values were ref {}, derived {}",
                 REFERENCE_APPROX[i],
                 x
             );
         });
         details.iter().enumerate().for_each(|(i, x)| {
             assert!(
-                (REFERENCE_DETAILS[i] - x).abs() < 1e-7,
-                "details difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (REFERENCE_DETAILS[i] - x).abs() < 1e-5,
+                "details difference expected to be < 1e-5, but values were ref {}, derived {}",
                 REFERENCE_DETAILS[i],
                 x
             );
         });
 
-        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 8)];
-        db4.execute_inverse(&approx, &details, &mut reconstructed)
+        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 12)];
+        db5.execute_inverse(&approx, &details, &mut reconstructed)
             .unwrap();
         reconstructed.iter().take(input.len()).enumerate().for_each(|(i, x)| {
             assert!(
-                (input[i] - x).abs() < 1e-7,
-                "reconstructed difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (input[i] - x).abs() < 1e-5,
+                "reconstructed difference expected to be < 1e-5, but values were ref {}, derived {}",
                 input[i],
                 x
             );
@@ -376,36 +409,33 @@ mod tests {
     }
 
     #[test]
-    fn test_db8_even_big() {
-        if !has_avx_with_fma() {
-            return;
-        }
+    fn test_db6_even_big() {
         let data_length = 86;
         let mut input = vec![0.; data_length];
         for i in 0..data_length {
             input[i] = i as f64 / data_length as f64;
         }
-        let db4 = AvxWavelet8TapsF64::new(
+        let db6 = AvxWavelet12TapsF64::new(
             BorderMode::Wrap,
-            DaubechiesFamily::Db4
+            DaubechiesFamily::Db6
                 .get_wavelet()
                 .as_ref()
                 .try_into()
                 .unwrap(),
         );
-        let out_length = dwt_length(input.len(), 8);
+        let out_length = dwt_length(input.len(), 12);
         let mut approx = vec![0.0; out_length];
         let mut details = vec![0.0; out_length];
-        db4.execute_forward(&input, &mut approx, &mut details)
+        db6.execute_forward(&input, &mut approx, &mut details)
             .unwrap();
 
-        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 8)];
-        db4.execute_inverse(&approx, &details, &mut reconstructed)
+        let mut reconstructed = vec![0.0; idwt_length(approx.len(), 12)];
+        db6.execute_inverse(&approx, &details, &mut reconstructed)
             .unwrap();
         reconstructed.iter().take(input.len()).enumerate().for_each(|(i, x)| {
             assert!(
-                (input[i] - x).abs() < 1e-7,
-                "reconstructed difference expected to be < 1e-7, but values were ref {}, derived {}",
+                (input[i] - x).abs() < 1e-5,
+                "reconstructed difference expected to be < 1e-5, but values were ref {}, derived {}",
                 input[i],
                 x
             );

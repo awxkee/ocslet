@@ -27,9 +27,7 @@
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #![allow(clippy::excessive_precision)]
-extern crate core;
 
-use crate::err::OscletError;
 use num_traits::{AsPrimitive, MulAdd};
 use std::fmt::Debug;
 use std::ops::{Add, Mul, Neg};
@@ -56,6 +54,7 @@ mod neon;
 mod symlets;
 mod util;
 mod wavelet10taps;
+mod wavelet12taps;
 mod wavelet2taps;
 mod wavelet4taps;
 mod wavelet6taps;
@@ -74,6 +73,7 @@ pub use biorthogonal::BiorthogonalFamily;
 pub use border_mode::BorderMode;
 pub use coiflet::CoifletFamily;
 pub use daubechies::DaubechiesFamily;
+pub use err::OscletError;
 pub use modwt::MoDwtExecutor;
 pub use symlets::SymletFamily;
 pub use util::{dwt_length, idwt_length};
@@ -82,9 +82,12 @@ pub use util::{dwt_length, idwt_length};
 ///
 /// # Type Parameters
 /// - `T`: The numeric type of the coefficients (e.g., `f32` or `f64`).
-pub trait WaveletFilterProvider<T> {
+pub trait WaveletFilterProvider<T: ToOwned + Sized>
+where
+    [T]: ToOwned,
+{
     /// Returns the wavelet filter coefficients as a `Vec<T>`.
-    fn get_wavelet(&self) -> Vec<T>;
+    fn get_wavelet(&self) -> std::borrow::Cow<'_, [T]>;
 }
 
 /// Trait for performing the **forward discrete wavelet transform (DWT)**.
@@ -208,12 +211,13 @@ impl Osclet {
     {
         let filter = db.get_wavelet();
         match filter.len() {
-            2 => T::wavelet_2_taps(border_mode, filter.as_slice().try_into().unwrap()),
-            4 => T::wavelet_4_taps(border_mode, filter.as_slice().try_into().unwrap()),
-            6 => T::wavelet_6_taps(border_mode, filter.as_slice().try_into().unwrap()),
-            8 => T::wavelet_8_taps(border_mode, filter.as_slice().try_into().unwrap()),
-            10 => T::wavelet_10_taps(border_mode, filter.as_slice().try_into().unwrap()),
-            _ => T::wavelet_n_taps(border_mode, filter.as_slice()),
+            2 => T::wavelet_2_taps(border_mode, filter.as_ref().try_into().unwrap()),
+            4 => T::wavelet_4_taps(border_mode, filter.as_ref().try_into().unwrap()),
+            6 => T::wavelet_6_taps(border_mode, filter.as_ref().try_into().unwrap()),
+            8 => T::wavelet_8_taps(border_mode, filter.as_ref().try_into().unwrap()),
+            10 => T::wavelet_10_taps(border_mode, filter.as_ref().try_into().unwrap()),
+            12 => T::wavelet_12_taps(border_mode, filter.as_ref().try_into().unwrap()),
+            _ => T::wavelet_n_taps(border_mode, filter.as_ref()),
         }
     }
 
@@ -230,11 +234,13 @@ impl Osclet {
     {
         let filter = db.get_wavelet();
         match filter.len() {
-            2 => T::wavelet_2_taps(border_mode, filter.as_slice().try_into().unwrap()),
-            4 => T::wavelet_4_taps(border_mode, filter.as_slice().try_into().unwrap()),
-            6 => T::wavelet_6_taps(border_mode, filter.as_slice().try_into().unwrap()),
-            8 => T::wavelet_8_taps(border_mode, filter.as_slice().try_into().unwrap()),
-            _ => T::wavelet_n_taps(border_mode, filter.as_slice()),
+            2 => T::wavelet_2_taps(border_mode, filter.as_ref().try_into().unwrap()),
+            4 => T::wavelet_4_taps(border_mode, filter.as_ref().try_into().unwrap()),
+            6 => T::wavelet_6_taps(border_mode, filter.as_ref().try_into().unwrap()),
+            8 => T::wavelet_8_taps(border_mode, filter.as_ref().try_into().unwrap()),
+            10 => T::wavelet_10_taps(border_mode, filter.as_ref().try_into().unwrap()),
+            12 => T::wavelet_12_taps(border_mode, filter.as_ref().try_into().unwrap()),
+            _ => T::wavelet_n_taps(border_mode, filter.as_ref()),
         }
     }
 

@@ -59,7 +59,7 @@ impl DwtForwardExecutor<f64> for NeonWavelet10TapsF64 {
     ) -> Result<(), OscletError> {
         let half = dwt_length(input.len(), 10);
 
-        if input.len() < 8 {
+        if input.len() < 10 {
             return Err(OscletError::MinFilterSize(input.len(), 10));
         }
 
@@ -329,7 +329,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db5
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -398,7 +398,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db5
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -468,7 +468,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db5
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );

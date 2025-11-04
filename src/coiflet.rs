@@ -28,6 +28,7 @@
  */
 use crate::WaveletFilterProvider;
 use num_traits::AsPrimitive;
+use std::borrow::Cow;
 
 /// Represents the Coiflet wavelet family.
 ///
@@ -206,17 +207,20 @@ impl<T: Copy + 'static> WaveletFilterProvider<T> for CoifletFamily
 where
     f64: AsPrimitive<T>,
 {
-    fn get_wavelet(&self) -> Vec<T> {
-        self.get_wavelet_impl()
-            .iter()
-            .map(|x| (x * std::f64::consts::SQRT_2).as_())
-            .collect()
+    fn get_wavelet(&self) -> Cow<'_, [T]> {
+        Cow::Owned(
+            self.get_wavelet_impl()
+                .iter()
+                .map(|x| (x * std::f64::consts::SQRT_2).as_())
+                .collect(),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::borrow::Cow;
 
     #[test]
     fn test_coiflets() {
@@ -229,7 +233,7 @@ mod tests {
             CoifletFamily::Coif6,
         ];
         for b in to_test.iter() {
-            let wv: Vec<f64> = b.get_wavelet();
+            let wv: Cow<[f64]> = b.get_wavelet();
             assert!(
                 wv.len().is_multiple_of(2),
                 "Assertion failed for coiflet {:?} with size {}",

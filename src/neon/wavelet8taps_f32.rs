@@ -84,6 +84,45 @@ impl DwtForwardExecutor<f32> for NeonWavelet8TapsF32 {
             let g = vld1q_f32(self.high_pass.as_ptr());
             let g2 = vld1q_f32(self.high_pass.get_unchecked(4..).as_ptr());
 
+            let mut processed = 0usize;
+
+            for (i, (approx, detail)) in approx
+                .chunks_exact_mut(2)
+                .zip(details.chunks_exact_mut(2))
+                .enumerate()
+            {
+                let base = 2 * 2 * i;
+                let input = padded_input.get_unchecked(base..);
+
+                let xw = vld1q_f32(input.as_ptr());
+                let xw1 = vld1q_f32(input.get_unchecked(4..).as_ptr());
+                let xw2 = vld1_f32(input.get_unchecked(8..).as_ptr());
+
+                let xw1_0 = vcombine_f32(vget_high_f32(xw), vget_low_f32(xw1));
+                let xw1_1 = vcombine_f32(vget_high_f32(xw1), xw2);
+
+                let a0 = vfmaq_f32(vmulq_f32(xw, h), xw1, h2);
+                let d0 = vfmaq_f32(vmulq_f32(xw, g), xw1, g2);
+
+                let a1 = vfmaq_f32(vmulq_f32(xw1_0, h), xw1_1, h2);
+                let d1 = vfmaq_f32(vmulq_f32(xw1_0, g), xw1_1, g2);
+
+                let xa = vpaddq_f32(a0, a1);
+                let xd = vpaddq_f32(d0, d1);
+
+                let va = vpadd_f32(vget_low_f32(xa), vget_high_f32(xa));
+                let vd = vpadd_f32(vget_low_f32(xd), vget_high_f32(xd));
+
+                vst1_f32(approx.as_mut_ptr(), va);
+                vst1_f32(detail.as_mut_ptr(), vd);
+
+                processed += 2;
+            }
+
+            let approx = approx.chunks_exact_mut(2).into_remainder();
+            let details = details.chunks_exact_mut(2).into_remainder();
+            let padded_input = padded_input.get_unchecked(processed * 2..);
+
             for (i, (approx, detail)) in approx.iter_mut().zip(details.iter_mut()).enumerate() {
                 let base = 2 * i;
                 let input = padded_input.get_unchecked(base..);
@@ -239,7 +278,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db4
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -307,7 +346,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db4
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -376,7 +415,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db4
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );

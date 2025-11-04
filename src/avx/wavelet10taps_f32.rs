@@ -42,7 +42,6 @@ pub(crate) struct AvxWavelet10TapsF32 {
 }
 
 impl AvxWavelet10TapsF32 {
-    #[allow(unused)]
     pub(crate) fn new(border_mode: BorderMode, w: &[f32; 10]) -> Self {
         let g = low_pass_to_high_from_arr(w);
         Self {
@@ -78,7 +77,7 @@ impl AvxWavelet10TapsF32 {
     ) -> Result<(), OscletError> {
         let half = dwt_length(input.len(), 10);
 
-        if input.len() < 8 {
+        if input.len() < 10 {
             return Err(OscletError::MinFilterSize(input.len(), 10));
         }
 
@@ -263,7 +262,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db5
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -332,7 +331,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db5
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
@@ -402,7 +401,7 @@ mod tests {
             BorderMode::Wrap,
             DaubechiesFamily::Db5
                 .get_wavelet()
-                .as_slice()
+                .as_ref()
                 .try_into()
                 .unwrap(),
         );
