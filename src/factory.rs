@@ -181,6 +181,13 @@ impl DwtFactory<f32> for f32 {
         border_mode: BorderMode,
         dwt: &[f32],
     ) -> Box<dyn IncompleteDwtExecutor<f32> + Send + Sync> {
+        #[cfg(all(target_arch = "x86_64", feature = "avx"))]
+        {
+            if has_valid_avx() {
+                use crate::avx::AvxWaveletNTaps;
+                return Box::new(AvxWaveletNTaps::new(border_mode, dwt));
+            }
+        }
         use crate::wavelet_n_taps::WaveletNTaps;
         Box::new(WaveletNTaps::new(border_mode, dwt))
     }
@@ -306,6 +313,13 @@ impl DwtFactory<f64> for f64 {
         border_mode: BorderMode,
         dwt: &[f64],
     ) -> Box<dyn IncompleteDwtExecutor<f64> + Send + Sync> {
+        #[cfg(all(target_arch = "x86_64", feature = "avx"))]
+        {
+            if has_valid_avx() {
+                use crate::avx::AvxWaveletNTaps;
+                return Box::new(AvxWaveletNTaps::new(border_mode, dwt));
+            }
+        }
         use crate::wavelet_n_taps::WaveletNTaps;
         Box::new(WaveletNTaps::new(border_mode, dwt))
     }

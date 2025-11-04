@@ -26,7 +26,9 @@
  * // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+use num_traits::MulAdd;
 use std::arch::x86_64::*;
+use std::ops::{Add, Mul};
 
 #[inline(always)]
 pub(crate) const fn shuffle(z: u32, y: u32, x: u32, w: u32) -> i32 {
@@ -94,4 +96,13 @@ pub(crate) fn _mm256_hpadd2_ps(v0: __m256, v1: __m256) -> __m256 {
 pub(crate) fn _mm256_hpadd2_pd(v0: __m256d, v1: __m256d) -> __m256d {
     let wa0 = _mm256_hadd_pd(v0, v1);
     _mm256_permute4x64_pd::<{ shuffle(3, 1, 2, 0) }>(wa0)
+}
+
+#[inline]
+pub(crate) fn afmla<T: Copy + Mul<T, Output = T> + Add<T, Output = T> + MulAdd<T, Output = T>>(
+    a: T,
+    b: T,
+    c: T,
+) -> T {
+    MulAdd::mul_add(a, b, c)
 }
