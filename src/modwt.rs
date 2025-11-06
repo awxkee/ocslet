@@ -170,9 +170,8 @@ where
         let stride = 1usize << (level.saturating_sub(1));
         let mut new_kernel = try_vec![T::default(); kernel.len() * stride];
 
-        for (i, &h) in kernel.iter().enumerate() {
-            let idx = i * stride;
-            new_kernel[idx] = h;
+        for (&h, dst) in kernel.iter().zip(new_kernel.iter_mut().step_by(stride)) {
+            *dst = h;
         }
 
         new_kernel = new_kernel.iter().copied().rev().collect();
@@ -203,10 +202,14 @@ where
         let mut new_h_kernel = try_vec![T::default(); h_kernel.len() * stride];
         let mut new_g_kernel = try_vec![T::default(); g_kernel.len() * stride];
 
-        for (i, (&h, &g)) in h_kernel.iter().zip(g_kernel.iter()).enumerate() {
-            let idx = i * stride;
-            new_h_kernel[idx] = h;
-            new_g_kernel[idx] = g;
+        for (((&h, &g), h_dst), g_dst) in h_kernel
+            .iter()
+            .zip(g_kernel.iter())
+            .zip(new_h_kernel.iter_mut().step_by(stride))
+            .zip(new_g_kernel.iter_mut().step_by(stride))
+        {
+            *h_dst = h;
+            *g_dst = g;
         }
 
         // filters here is supposed to be reversed ones
